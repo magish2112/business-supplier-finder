@@ -1,0 +1,54 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+venv
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.pytest_cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.cache
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+logs/
+*.log
+web_search_*.json
+business_search_*.json
+*.xlsx
+*.csv
+
+# Documentation
+README.md
+api_docs.md
+.github/
+
+# Development files
+.env
+.env.example
+pyrightconfig.json
+.flake8
+pyproject.toml
