@@ -4,7 +4,7 @@
 """
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response
-from business_supplier_finder import BusinessSupplierFinder
+from business_supplier_finder import BusinessSupplierFinder, OPENAI_AVAILABLE, PERPLEXITY_CONFIG
 import json
 import logging
 import threading
@@ -13,6 +13,7 @@ import os
 from dotenv import load_dotenv
 from functools import wraps
 import time
+import uuid
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -315,6 +316,250 @@ def api_saved_search(filename):
         
     except Exception as e:
         return jsonify({'error': str(e)})
+
+# ================================
+# REST API ENDPOINTS
+# ================================
+
+@app.route('/api/v1/search', methods=['POST'])
+def api_search():
+    """REST API для поиска поставщиков"""
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+
+        product = data.get('product', '').strip()
+        region = data.get('region', '').strip()
+        quantity = data.get('quantity', '')
+
+        if not product:
+            return jsonify({'error': 'Product name is required'}), 400
+
+        # Генерируем уникальный ID поиска
+        search_id = str(uuid.uuid4())
+
+        logger.info(f"🔍 API поиск [{search_id}]: {product}, регион: {region}, количество: {quantity}")
+
+        # Добавляем в активные поиски
+        global active_searches
+        active_searches[search_id] = {
+            'status': 'in_progress',
+            'product': product,
+            'region': region,
+            'quantity': quantity,
+            'started_at': datetime.now().isoformat()
+        }
+
+        # Запускаем поиск в отдельном потоке
+        def perform_search():
+            try:
+                # Создаем экземпляр поисковика
+                finder = BusinessSupplierFinder()
+
+                # Выполняем поиск
+                suppliers = finder.search_business_suppliers(product, region, quantity)
+
+                # Сохраняем результаты в кэше
+                global search_cache
+                cache_key = f"search_{search_id}"
+                search_cache[cache_key] = {
+                    'suppliers': suppliers,
+                    'product': product,
+                    'region': region,
+                    'quantity': quantity,
+                    'completed_at': datetime.now().isoformat(),
+                    'total': len(suppliers)
+                }
+
+                # Удаляем из активных поисков
+                if search_id in active_searches:
+                    del active_searches[search_id]
+
+                logger.info(f"✅ API поиск [{search_id}] завершен: найдено {len(suppliers)} поставщиков")
+
+            except Exception as e:
+                logger.error(f"❌ Ошибка выполнения поиска [{search_id}]: {str(e)}")
+                # Обновляем статус поиска
+                if search_id in active_searches:
+                    active_searches[search_id]['status'] = 'error'
+                    active_searches[search_id]['error'] = str(e)
+
+        # Запускаем поиск в фоне
+        thread = threading.Thread(target=perform_search)
+        thread.daemon = True
+        thread.start()
+
+        # Возвращаем ID поиска
+        return jsonify({
+            'success': True,
+            'search_id': search_id,
+            'status': 'accepted',
+            'message': 'Поиск запущен в фоне',
+            'estimated_time': '30-120 секунд'
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка API поиска: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/v1/search/<search_id>', methods=['GET'])
+def api_get_search_results(search_id):
+    """Получить результаты поиска по ID"""
+    try:
+        # Проверяем активные поиски
+        if search_id in active_searches:
+            return jsonify({
+                'status': 'in_progress',
+                'search_id': search_id,
+                'message': 'Поиск еще выполняется'
+            })
+
+        # Ищем в кэше
+        cache_key = f"search_{search_id}"
+        if cache_key in search_cache:
+            cached_data = search_cache[cache_key]
+            return jsonify({
+                'status': 'completed',
+                'search_id': search_id,
+                'data': cached_data
+            })
+
+        return jsonify({'error': 'Search not found'}), 404
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения результатов поиска: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/v1/suppliers', methods=['GET'])
+def api_get_suppliers():
+    """Получить всех поставщиков из последнего поиска"""
+    try:
+        global search_results
+
+        # Параметры фильтрации
+        company_type = request.args.get('type')
+        min_score = request.args.get('min_score')
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+
+        suppliers = search_results.copy()
+
+        # Применяем фильтры
+        if company_type:
+            suppliers = [s for s in suppliers if s.get('company_type') == company_type]
+
+        if min_score:
+            try:
+                min_score_int = int(min_score)
+                suppliers = [s for s in suppliers if s.get('relevance_score', 0) >= min_score_int]
+            except ValueError:
+                pass
+
+        # Пагинация
+        total = len(suppliers)
+        suppliers = suppliers[offset:offset + limit]
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'suppliers': suppliers,
+                'total': total,
+                'limit': limit,
+                'offset': offset
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения поставщиков: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/v1/stats', methods=['GET'])
+def api_get_stats():
+    """Получить статистику приложения"""
+    try:
+        global search_results, search_cache
+
+        # Статистика по типам компаний
+        company_types = {}
+        total_score = 0
+        total_contacts = 0
+
+        for supplier in search_results:
+            company_type = supplier.get('company_type', 'UNKNOWN')
+            company_types[company_type] = company_types.get(company_type, 0) + 1
+
+            total_score += supplier.get('relevance_score', 0)
+            total_contacts += supplier.get('contact_completeness', 0)
+
+        avg_score = total_score / len(search_results) if search_results else 0
+        avg_contacts = total_contacts / len(search_results) if search_results else 0
+
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_suppliers': len(search_results),
+                'cached_searches': len(search_cache),
+                'active_searches': len(active_searches),
+                'company_types': company_types,
+                'average_score': round(avg_score, 1),
+                'average_contacts': round(avg_contacts, 1),
+                'timestamp': datetime.now().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения статистики: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/v1/health', methods=['GET'])
+def api_health_check():
+    """Проверка здоровья приложения"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'version': '2.3',
+        'services': {
+            'perplexity_ai': OPENAI_AVAILABLE and PERPLEXITY_CONFIG['enabled'],
+            'web_scraping': True,
+            'caching': True
+        }
+    })
+
+@app.route('/api/v1/config', methods=['GET'])
+def api_get_config():
+    """Получить конфигурацию приложения (без чувствительных данных)"""
+    return jsonify({
+        'version': '2.3',
+        'features': {
+            'perplexity_ai': OPENAI_AVAILABLE and PERPLEXITY_CONFIG['enabled'],
+            'multiple_sources': True,
+            'advanced_scoring': True,
+            'caching': True,
+            'export': True
+        },
+        'sources': [
+            'Google Search',
+            'Yandex Search',
+            'Yandex Maps',
+            '2GIS',
+            'Business Catalogs',
+            'Perplexity AI'
+        ]
+    })
+
+# ================================
+# ERROR HANDLERS
+# ================================
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
     # Создаем папку для шаблонов если её нет
