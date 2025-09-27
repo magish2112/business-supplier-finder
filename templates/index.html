@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block title %}Главная - Поиск бизнес-поставщиков{% endblock %}
+
+{% block content %}
+<div class="hero-section text-white text-center">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-8 mx-auto">
+                <h1 class="display-3 fw-bold mb-4" style="text-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                    <i class="fas fa-building me-3"></i>
+                    Поиск бизнес-поставщиков
+                </h1>
+                <p class="lead mb-5 fs-4" style="text-shadow: 0 2px 10px rgba(0,0,0,0.2);">
+                    Интеллектуальный поиск производителей, дистрибьюторов и крупных поставщиков с <strong>ИИ-ранжированием</strong>
+                </p>
+
+                <!-- Статистика -->
+                <div class="row mb-4 justify-content-center">
+                    <div class="col-6 col-md-4 mb-3">
+                        <div class="bg-white bg-opacity-10 rounded-3 p-3 backdrop-filter-blur">
+                            <div class="display-6 fw-bold text-white mb-1">50+</div>
+                            <small class="text-white-50">Поисковых запросов</small>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-4 mb-3">
+                        <div class="bg-white bg-opacity-10 rounded-3 p-3 backdrop-filter-blur">
+                            <div class="display-6 fw-bold text-white mb-1">15+</div>
+                            <small class="text-white-50">Факторов ранжирования</small>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-4 mb-3">
+                        <div class="bg-white bg-opacity-10 rounded-3 p-3 backdrop-filter-blur">
+                            <div class="display-6 fw-bold text-white mb-1">5</div>
+                            <small class="text-white-50">Поисковых систем</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-center gap-4 flex-wrap mb-4" role="group" aria-label="Основные действия поиска">
+                    <a href="{{ url_for('search') }}" class="btn btn-light btn-lg px-5 py-3 shadow-lg" role="button" aria-label="Перейти к расширенному поиску поставщиков">
+                        <i class="fas fa-search me-2" aria-hidden="true"></i>
+                        <span class="fw-semibold">Расширенный поиск</span>
+                    </a>
+                    <a href="{{ url_for('quick_search') }}" class="btn btn-outline-light btn-lg px-5 py-3 shadow-lg" role="button" aria-label="Перейти к быстрому поиску поставщиков">
+                        <i class="fas fa-bolt me-2" aria-hidden="true"></i>
+                        <span class="fw-semibold">Быстрый поиск</span>
+                    </a>
+                </div>
+
+                <!-- Быстрые кнопки поиска -->
+                <div class="row justify-content-center mb-5">
+                    <div class="col-12">
+                        <div class="bg-white bg-opacity-10 rounded-3 p-4 backdrop-filter-blur">
+                            <h5 class="text-white text-center mb-4" id="popular-searches-heading">
+                                <i class="fas fa-zap me-2" aria-hidden="true"></i>
+                                Популярные запросы
+                            </h5>
+                            <div class="row g-3 justify-content-center" role="group" aria-labelledby="popular-searches-heading">
+                                <div class="col-6 col-md-4 col-lg-3">
+                                    <a href="/search?product=сантехника+Grohe&region=Ставрополь&quantity=опт"
+                                       class="btn btn-outline-light btn-sm w-100 py-2 quick-search-btn"
+                                       role="button"
+                                       aria-label="Быстрый поиск сантехники Grohe в Ставрополе">
+                                        <i class="fas fa-shower me-1" aria-hidden="true"></i>
+                                        <small class="d-block">Grohe</small>
+                                    </a>
+                                </div>
+                                <div class="col-6 col-md-4 col-lg-3">
+                                    <a href="/search?product=металлопрокат&region=Ставрополь&quantity=опт"
+                                       class="btn btn-outline-light btn-sm w-100 py-2 quick-search-btn"
+                                       role="button"
+                                       aria-label="Быстрый поиск металлопроката в Ставрополе">
+                                        <i class="fas fa-cog me-1" aria-hidden="true"></i>
+                                        <small class="d-block">Металлопрокат</small>
+                                    </a>
+                                </div>
+                                <div class="col-6 col-md-4 col-lg-3">
+                                    <a href="/search?product=сантехника+трубы&region=Ставрополь&quantity=опт"
+                                       class="btn btn-outline-light btn-sm w-100 py-2 quick-search-btn"
+                                       role="button"
+                                       aria-label="Быстрый поиск сантехники и труб в Ставрополе">
+                                        <i class="fas fa-tools me-1" aria-hidden="true"></i>
+                                        <small class="d-block">Сантехника</small>
+                                    </a>
+                                </div>
+                                <div class="col-6 col-md-4 col-lg-3">
+                                    <a href="/search?product=электрооборудование&region=Ставрополь&quantity=опт"
+                                       class="btn btn-outline-light btn-sm w-100 py-2 quick-search-btn"
+                                       role="button"
+                                       aria-label="Быстрый поиск электрооборудования в Ставрополе">
+                                        <i class="fas fa-bolt me-1" aria-hidden="true"></i>
+                                        <small class="d-block">Электро</small>
+                                    </a>
+                                </div>
+                                <div class="col-6 col-md-4 col-lg-3">
+                                    <a href="/search?product=строительные+материалы&region=Ставрополь&quantity=опт"
+                                       class="btn btn-outline-light btn-sm w-100 py-2 quick-search-btn"
+                                       role="button"
+                                       aria-label="Быстрый поиск строительных материалов в Ставрополе">
+                                        <i class="fas fa-building me-1" aria-hidden="true"></i>
+                                        <small class="d-block">Стройматериалы</small>
+                                    </a>
+                                </div>
+                                <div class="col-6 col-md-4 col-lg-3">
+                                    <a href="/search?product=инструменты+электро&region=Ставрополь&quantity=опт"
+                                       class="btn btn-outline-light btn-sm w-100 py-2 quick-search-btn"
+                                       role="button"
+                                       aria-label="Быстрый поиск электроинструментов в Ставрополе">
+                                        <i class="fas fa-wrench me-1" aria-hidden="true"></i>
+                                        <small class="d-block">Инструменты</small>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="feature-card">
+            <div class="feature-icon">
+                <i class="fas fa-search"></i>
+            </div>
+            <h4>Умный поиск</h4>
+            <p class="text-muted">
+                Поиск по Google и Яндекс с фильтрацией бизнес-поставщиков
+            </p>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="feature-card">
+            <div class="feature-icon">
+                <i class="fas fa-filter"></i>
+            </div>
+            <h4>Фильтрация</h4>
+            <p class="text-muted">
+                Автоматическое определение компаний с безналичной оплатой
+            </p>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="feature-card">
+            <div class="feature-icon">
+                <i class="fas fa-download"></i>
+            </div>
+            <h4>Экспорт</h4>
+            <p class="text-muted">
+                Сохранение результатов в файл для дальнейшей работы
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-tools me-2"></i>
+                    Что ищем
+                </h5>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success me-2"></i>Сантехника (Grohe, Hansgrohe)</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Металлопрокат (уголок, труба)</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Строительные материалы</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Электрооборудование</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-map-marker-alt me-2"></i>
+                    Регионы поиска
+                </h5>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success me-2"></i>Ставропольский край</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Краснодарский край</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Ростовская область</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Другие регионы</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body text-center">
+                <h4 class="mb-4">
+                    <i class="fas fa-rocket me-2"></i>
+                    Готовы начать поиск?
+                </h4>
+                <p class="text-muted mb-4">
+                    Найдите надежных поставщиков для вашего бизнеса за несколько минут
+                </p>
+                <a href="{{ url_for('search') }}" class="btn btn-primary btn-lg">
+                    <i class="fas fa-search me-2"></i>Начать поиск
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Анимация появления быстрых кнопок поиска
+    const quickButtons = document.querySelectorAll('.quick-search-btn');
+    quickButtons.forEach((btn, index) => {
+        btn.style.opacity = '0';
+        btn.style.transform = 'translateY(20px)';
+        btn.style.transition = 'all 0.5s ease';
+
+        setTimeout(() => {
+            btn.style.opacity = '1';
+            btn.style.transform = 'translateY(0)';
+        }, index * 100);
+    });
+
+    // Обработка кликов по быстрым кнопкам поиска
+    quickButtons.forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            // Показываем загрузку
+            showLoading('Выполняем поиск...');
+
+            // Добавляем эффект нажатия
+            this.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                this.style.transform = 'scale(1)';
+            }, 150);
+
+            // Кнопка будет перенаправлять автоматически через href
+        });
+    });
+
+    // Анимация для статистики
+    const stats = document.querySelectorAll('.display-6');
+    const observerOptions = {
+        threshold: 0.5,
+        rootMargin: '0px 0px -50px 0px'
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                animateCounter(entry.target);
+            }
+        });
+    }, observerOptions);
+
+    stats.forEach(stat => observer.observe(stat));
+
+    function animateCounter(element) {
+        const target = parseInt(element.textContent);
+        const duration = 2000;
+        const step = target / (duration / 16);
+        let current = 0;
+
+        const timer = setInterval(() => {
+            current += step;
+            if (current >= target) {
+                element.textContent = target;
+                clearInterval(timer);
+            } else {
+                element.textContent = Math.floor(current);
+            }
+        }, 16);
+    }
+
+    // Эффект параллакса для hero секции
+    window.addEventListener('scroll', function() {
+        const hero = document.querySelector('.hero-section');
+        const scrolled = window.pageYOffset;
+        const rate = scrolled * -0.5;
+
+        if (hero) {
+            hero.style.transform = `translateY(${rate}px)`;
+        }
+    });
+
+    // Плавная прокрутка для внутренних ссылок
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) {
+                target.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+});
+</script>
+{% endblock %} 

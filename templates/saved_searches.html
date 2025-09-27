@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}История поиска - Бизнес-поставщики{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">
+                    <i class="fas fa-history me-2"></i>
+                    История поиска
+                </h3>
+                
+                {% if searches %}
+                <div class="row">
+                    {% for search in searches %}
+                    <div class="col-md-6 col-lg-4 mb-4">
+                        <div class="card saved-search-card">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <h6 class="card-title mb-0">{{ search.product[:30] }}{% if search.product|length > 30 %}...{% endif %}</h6>
+                                    <small class="text-muted">{{ search.timestamp }}</small>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <div class="row">
+                                        <div class="col-6">
+                                            <small class="text-muted">
+                                                <i class="fas fa-map-marker-alt me-1"></i>
+                                                {{ search.region }}
+                                            </small>
+                                        </div>
+                                        <div class="col-6">
+                                            <small class="text-muted">
+                                                <i class="fas fa-building me-1"></i>
+                                                {{ search.suppliers_count }} поставщиков
+                                            </small>
+                                        </div>
+                                    </div>
+                                    
+                                    {% if search.quantity %}
+                                    <div class="mt-2">
+                                        <small class="text-muted">
+                                            <i class="fas fa-sort-numeric-up me-1"></i>
+                                            {{ search.quantity }}
+                                        </small>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-primary" onclick="loadSearch('{{ search.filename }}')">
+                                        <i class="fas fa-eye me-1"></i>Просмотреть
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="copySearchInfo('{{ search.product }}', '{{ search.region }}')">
+                                        <i class="fas fa-copy me-1"></i>Копировать
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <div class="text-center mt-4">
+                    <a href="{{ url_for('search') }}" class="btn btn-primary">
+                        <i class="fas fa-search me-1"></i>Новый поиск
+                    </a>
+                </div>
+                
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-history fa-3x text-muted mb-3"></i>
+                    <h5>История поиска пуста</h5>
+                    <p class="text-muted">Выполните поиск, чтобы увидеть историю</p>
+                    <a href="{{ url_for('search') }}" class="btn btn-primary">
+                        <i class="fas fa-search me-1"></i>Начать поиск
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для просмотра результатов -->
+<div class="modal fade" id="searchResultsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-list me-2"></i>
+                    Результаты поиска
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalResultsContent">
+                <!-- Результаты будут загружены сюда -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                <button type="button" class="btn btn-primary" onclick="exportModalResults()">Экспорт</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function loadSearch(filename) {
+        // Показать загрузку
+        showLoading();
+        
+        // Загрузить результаты поиска
+        fetch(`/api/saved_search/${filename}`)
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.success) {
+                    displayModalResults(data);
+                } else {
+                    showToast('Ошибка при загрузке: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showToast('Ошибка при загрузке', 'error');
+            });
+    }
+    
+    function displayModalResults(data) {
+        const modalContent = document.getElementById('modalResultsContent');
+        
+        let html = `
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <strong>Товар:</strong> ${data.product}
+                </div>
+                <div class="col-md-4">
+                    <strong>Регион:</strong> ${data.region}
+                </div>
+                <div class="col-md-4">
+                    <strong>Найдено:</strong> ${data.suppliers.length}
+                </div>
+            </div>
+        `;
+        
+        if (data.suppliers.length > 0) {
+            html += '<div class="row">';
+            
+            data.suppliers.forEach(supplier => {
+                html += `
+                    <div class="col-md-6 mb-3">
+                        <div class="card supplier-card">
+                            <div class="card-body">
+                                <h6 class="card-title">${supplier.name}</h6>
+                                
+                                <div class="mb-2">
+                                    ${supplier.is_business ? 
+                                        '<span class="badge badge-business me-1"><i class="fas fa-building me-1"></i>Бизнес</span>' : 
+                                        ''
+                                    }
+                                    <span class="badge badge-relevance">
+                                        <i class="fas fa-star me-1"></i>${supplier.relevance_score || 0}
+                                    </span>
+                                </div>
+                                
+                                ${supplier.phone ? 
+                                    `<div class="mb-1"><i class="fas fa-phone text-success me-2"></i>${supplier.phone}</div>` : 
+                                    ''
+                                }
+                                
+                                ${supplier.email ? 
+                                    `<div class="mb-1"><i class="fas fa-envelope text-primary me-2"></i>${supplier.email}</div>` : 
+                                    ''
+                                }
+                                
+                                ${supplier.website ? 
+                                    `<div class="mb-1"><i class="fas fa-globe text-info me-2"></i><a href="${supplier.website}" target="_blank">${supplier.website.replace('https://', '').replace('http://', '')}</a></div>` : 
+                                    ''
+                                }
+                                
+                                <div class="mt-2">
+                                    <small class="text-muted">
+                                        <i class="fas fa-search me-1"></i>${supplier.source || 'Неизвестно'}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+        } else {
+            html += `
+                <div class="text-center">
+                    <i class="fas fa-search fa-2x text-muted mb-3"></i>
+                    <p>Поставщики не найдены</p>
+                </div>
+            `;
+        }
+        
+        modalContent.innerHTML = html;
+        
+        // Показать модальное окно
+        const modal = new bootstrap.Modal(document.getElementById('searchResultsModal'));
+        modal.show();
+    }
+    
+    function copySearchInfo(product, region) {
+        const text = `Товар: ${product}\nРегион: ${region}`;
+        navigator.clipboard.writeText(text).then(function() {
+            showToast('Информация скопирована в буфер обмена!', 'success');
+        });
+    }
+    
+    function exportModalResults() {
+        // Здесь можно добавить экспорт результатов из модального окна
+        showToast('Экспорт результатов', 'success');
+    }
+    
+    // Показать уведомление
+    function showToast(message, type) {
+        const toast = document.createElement('div');
+        toast.className = `alert alert-${type === 'success' ? 'success' : 'danger'} position-fixed`;
+        toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999;';
+        toast.innerHTML = message;
+        
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }
+</script>
+{% endblock %} 

@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+{% block title %}Поиск в процессе - Бизнес-поставщики{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h3 class="card-title mb-4">
+                        <i class="fas fa-search me-2"></i>
+                        Поиск в процессе
+                    </h3>
+
+                    <div class="mb-4">
+                        <strong>Товар:</strong> {{ product }}<br>
+                        <strong>Регион:</strong> {{ region }}<br>
+                        {% if quantity %}<strong>Количество:</strong> {{ quantity }}<br>{% endif %}
+                        <strong>ID поиска:</strong> <code>{{ search_id }}</code>
+                    </div>
+
+                    <!-- Прогресс-бар -->
+                    <div class="mb-4">
+                        <div class="progress" style="height: 25px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                                 role="progressbar"
+                                 id="searchProgressBar"
+                                 style="width: 0%">
+                                <span id="progressText">0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Статус поиска -->
+                    <div class="alert alert-info" id="searchStatus">
+                        <i class="fas fa-spinner fa-spin me-2"></i>
+                        <span id="statusText">Подготовка поиска...</span>
+                    </div>
+
+                    <!-- Этапы поиска -->
+                    <div class="mb-4">
+                        <div class="row text-center">
+                            <div class="col-6 col-md-3 mb-3">
+                                <div class="step-indicator" id="step-init">
+                                    <i class="fas fa-play-circle fa-2x text-secondary mb-2"></i>
+                                    <small>Подготовка</small>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3 mb-3">
+                                <div class="step-indicator" id="step-google">
+                                    <i class="fab fa-google fa-2x text-secondary mb-2"></i>
+                                    <small>Google</small>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3 mb-3">
+                                <div class="step-indicator" id="step-yandex">
+                                    <i class="fas fa-search fa-2x text-secondary mb-2"></i>
+                                    <small>Яндекс</small>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3 mb-3">
+                                <div class="step-indicator" id="step-complete">
+                                    <i class="fas fa-check-circle fa-2x text-secondary mb-2"></i>
+                                    <small>Готово</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Статистика -->
+                    <div class="row text-center mb-4" id="statsSection" style="display: none;">
+                        <div class="col-md-4">
+                            <div class="bg-light rounded p-3">
+                                <div class="h4 text-primary" id="suppliersFound">0</div>
+                                <small class="text-muted">Найдено поставщиков</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="bg-light rounded p-3">
+                                <div class="h4 text-success" id="suppliersFiltered">0</div>
+                                <small class="text-muted">После фильтрации</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="bg-light rounded p-3">
+                                <div class="h4 text-info" id="searchTime">--:--</div>
+                                <small class="text-muted">Время поиска</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Сообщения -->
+                    <div id="messages" class="mb-4"></div>
+
+                    <!-- Кнопки действий -->
+                    <div class="d-flex justify-content-center gap-3">
+                        <button class="btn btn-outline-secondary" onclick="window.history.back()">
+                            <i class="fas fa-arrow-left me-1"></i>Назад
+                        </button>
+                        <a href="{{ url_for('index') }}" class="btn btn-outline-primary">
+                            <i class="fas fa-home me-1"></i>Главная
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+    let socket = null;
+    let startTime = new Date();
+    let searchId = '{{ search_id }}';
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initWebSocket();
+        updateTimer();
+        setInterval(updateTimer, 1000);
+    });
+
+    function initWebSocket() {
+        socket = io('/search');
+
+        socket.on('connect', function() {
+            console.log('Connected to WebSocket');
+            socket.emit('join_search', { search_id: searchId });
+            showToast('Подключено к серверу', 'success');
+        });
+
+        socket.on('disconnect', function() {
+            console.log('Disconnected from WebSocket');
+            showToast('Соединение потеряно', 'warning');
+        });
+
+        socket.on('search_progress', function(data) {
+            if (data.search_id === searchId) {
+                updateProgress(data.progress, data.status, data.step);
+
+                if (data.suppliers) {
+                    updateStats(data.count, data.count);
+                    showResults(data.suppliers);
+                }
+            }
+        });
+
+        socket.on('search_error', function(data) {
+            if (data.search_id === searchId) {
+                showError(data.error);
+            }
+        });
+
+        socket.on('search_complete', function(data) {
+            if (data.search_id === searchId) {
+                showCompletion(data);
+            }
+        });
+    }
+
+    function updateProgress(progress, status, step) {
+        const progressBar = document.getElementById('searchProgressBar');
+        const progressText = document.getElementById('progressText');
+        const statusText = document.getElementById('statusText');
+
+        progressBar.style.width = progress + '%';
+        progressText.textContent = progress + '%';
+        statusText.textContent = status;
+
+        // Обновляем индикаторы этапов
+        updateStepIndicators(step);
+
+        // Показываем статистику при прогрессе > 50%
+        if (progress > 50) {
+            document.getElementById('statsSection').style.display = 'block';
+        }
+    }
+
+    function updateStepIndicators(activeStep) {
+        const steps = ['init', 'google', 'yandex', 'catalogs', 'filtering', 'complete'];
+        const stepElements = steps.map(step => document.getElementById('step-' + step));
+
+        stepElements.forEach((element, index) => {
+            if (!element) return;
+
+            const stepName = steps[index];
+            const icon = element.querySelector('i');
+
+            if (stepName === activeStep) {
+                element.classList.add('active');
+                icon.className = icon.className.replace('text-secondary', 'text-primary');
+            } else if (steps.indexOf(activeStep) > index) {
+                element.classList.add('completed');
+                icon.className = icon.className.replace('text-secondary', 'text-success');
+            }
+        });
+    }
+
+    function updateStats(found, filtered) {
+        document.getElementById('suppliersFound').textContent = found;
+        document.getElementById('suppliersFiltered').textContent = filtered;
+    }
+
+    function updateTimer() {
+        const now = new Date();
+        const diff = now - startTime;
+        const minutes = Math.floor(diff / 60000);
+        const seconds = Math.floor((diff % 60000) / 1000);
+        document.getElementById('searchTime').textContent =
+            minutes.toString().padStart(2, '0') + ':' + seconds.toString().padStart(2, '0');
+    }
+
+    function showResults(suppliers) {
+        const messagesDiv = document.getElementById('messages');
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-success';
+        alert.innerHTML = `
+            <i class="fas fa-check-circle me-2"></i>
+            Найдено ${suppliers.length} поставщиков!
+            <a href="/results/${searchId}" class="alert-link ms-2">Посмотреть результаты</a>
+        `;
+        messagesDiv.appendChild(alert);
+
+        // Автоматическое перенаправление через 3 секунды
+        setTimeout(() => {
+            window.location.href = `/results/${searchId}`;
+        }, 3000);
+    }
+
+    function showError(error) {
+        const messagesDiv = document.getElementById('messages');
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-danger';
+        alert.innerHTML = `
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Ошибка: ${error}
+        `;
+        messagesDiv.appendChild(alert);
+    }
+
+    function showCompletion(data) {
+        const messagesDiv = document.getElementById('messages');
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-success';
+        alert.innerHTML = `
+            <i class="fas fa-check-circle me-2"></i>
+            Поиск завершен! Найдено ${data.count} поставщиков.
+            <a href="/results/${searchId}" class="alert-link ms-2">Посмотреть результаты</a>
+        `;
+        messagesDiv.appendChild(alert);
+    }
+
+    // Добавляем стили для индикаторов этапов
+    const style = document.createElement('style');
+    style.textContent = `
+        .step-indicator {
+            transition: all 0.3s ease;
+        }
+        .step-indicator.active {
+            transform: scale(1.1);
+        }
+        .step-indicator.completed i {
+            color: var(--success-color) !important;
+        }
+    `;
+    document.head.appendChild(style);
+</script>
+{% endblock %}

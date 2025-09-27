@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+
+{% block title %}Поиск - Бизнес-поставщики{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title text-center mb-4">
+                    <i class="fas fa-search me-2"></i>
+                    Поиск бизнес-поставщиков
+                </h3>
+                
+                {% if error %}
+                <div class="alert alert-danger" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    {{ error }}
+                </div>
+                {% endif %}
+                
+                <form method="POST" id="searchForm">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="product" class="form-label">
+                                <i class="fas fa-box me-1"></i>
+                                Название товара *
+                            </label>
+                            <input type="text" class="form-control" id="product" name="product" 
+                                   placeholder="Например: Grohe New Tempesta 110" required>
+                            <div class="form-text">Укажите точное название товара</div>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="region" class="form-label">
+                                <i class="fas fa-map-marker-alt me-1"></i>
+                                Регион *
+                            </label>
+                            <input type="text" class="form-control" id="region" name="region" 
+                                   placeholder="Например: Ставрополь" required>
+                            <div class="form-text">Город или область поиска</div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="quantity" class="form-label">
+                                <i class="fas fa-sort-numeric-up me-1"></i>
+                                Количество
+                            </label>
+                            <input type="text" class="form-control" id="quantity" name="quantity" 
+                                   placeholder="Например: 25 штук, опт">
+                            <div class="form-text">Необязательно</div>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="min_price" class="form-label">
+                                <i class="fas fa-ruble-sign me-1"></i>
+                                Минимальная цена
+                            </label>
+                            <input type="number" class="form-control" id="min_price" name="min_price" 
+                                   placeholder="0">
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="max_price" class="form-label">
+                                <i class="fas fa-ruble-sign me-1"></i>
+                                Максимальная цена
+                            </label>
+                            <input type="number" class="form-control" id="max_price" name="max_price" 
+                                   placeholder="100000">
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="payment_type" class="form-label">
+                                <i class="fas fa-credit-card me-1"></i>
+                                Тип оплаты
+                            </label>
+                            <select class="form-select" id="payment_type" name="payment_type">
+                                <option value="both">Безнал и наличные</option>
+                                <option value="cashless">Только безнал</option>
+                                <option value="cash">Только наличные</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="delivery_needed" name="delivery_needed">
+                                <label class="form-check-label" for="delivery_needed">
+                                    <i class="fas fa-truck me-1"></i>
+                                    Нужна доставка
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="urgent" name="urgent">
+                                <label class="form-check-label" for="urgent">
+                                    <i class="fas fa-clock me-1"></i>
+                                    Срочная доставка
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary btn-lg position-relative overflow-hidden" id="searchBtn">
+                                <span class="position-relative z-index-2">
+                                    <i class="fas fa-search me-2"></i>
+                                    Начать поиск
+                                </span>
+                                <div class="position-absolute top-50 start-50 translate-middle d-none" id="btnSpinner">
+                                    <div class="spinner-border spinner-border-sm text-light" role="status">
+                                        <span class="visually-hidden">Загрузка...</span>
+                                    </div>
+                                </div>
+                            </button>
+
+                            <div class="loading mt-3">
+                                <div class="d-flex flex-column align-items-center">
+                                    <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                                        <span class="visually-hidden">Загрузка...</span>
+                                    </div>
+                                    <div class="progress" style="width: 200px; height: 6px;">
+                                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                                             role="progressbar" id="searchProgress" style="width: 0%">
+                                        </div>
+                                    </div>
+                                    <p class="text-muted mt-2" id="loadingText">Поиск поставщиков...</p>
+                                    <small class="text-muted" id="searchStatus">Подготовка...</small>
+                                </div>
+                            </div>
+                        </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Примеры поиска -->
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    Примеры поиска
+                </h5>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="border rounded p-3 mb-3">
+                            <h6><i class="fas fa-shower me-1"></i>Сантехника</h6>
+                            <p class="small text-muted mb-2">Grohe New Tempesta 110</p>
+                            <button class="btn btn-sm btn-outline-primary" onclick="fillExample('Grohe New Tempesta 110', 'Ставрополь')">
+                                Использовать
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="border rounded p-3 mb-3">
+                            <h6><i class="fas fa-cog me-1"></i>Металлопрокат</h6>
+                            <p class="small text-muted mb-2">уголок оцинкованный 70*70*8</p>
+                            <button class="btn btn-sm btn-outline-primary" onclick="fillExample('уголок оцинкованный 70*70*8', 'Ставрополь')">
+                                Использовать
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="border rounded p-3 mb-3">
+                            <h6><i class="fas fa-tools me-1"></i>Инструменты</h6>
+                            <p class="small text-muted mb-2">перфоратор Bosch GBH 2-26</p>
+                            <button class="btn btn-sm btn-outline-primary" onclick="fillExample('перфоратор Bosch GBH 2-26', 'Ставрополь')">
+                                Использовать
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let searchProgressInterval;
+
+    // Заполнение примера с анимацией
+    function fillExample(product, region) {
+        const productInput = document.getElementById('product');
+        const regionInput = document.getElementById('region');
+
+        // Анимация заполнения
+        productInput.style.transform = 'scale(1.02)';
+        regionInput.style.transform = 'scale(1.02)';
+
+        setTimeout(() => {
+            productInput.value = product;
+            regionInput.value = region;
+            productInput.style.transform = 'scale(1)';
+            regionInput.style.transform = 'scale(1)';
+            showToast('Пример заполнен!', 'success');
+        }, 200);
+    }
+
+    // Показать загрузку при отправке формы
+    document.getElementById('searchForm').addEventListener('submit', function(e) {
+        const searchBtn = document.getElementById('searchBtn');
+
+        // Показать загрузку
+        showLoading('Выполняется поиск поставщиков...');
+        searchBtn.disabled = true;
+        searchBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Поиск...';
+
+        // Имитация прогресса поиска
+        let progress = 0;
+        const progressBar = document.getElementById('searchProgress');
+        const statusText = document.getElementById('searchStatus');
+        const loadingText = document.getElementById('loadingText');
+
+        const searchSteps = [
+            'Подготовка поиска...',
+            'Поиск в Google...',
+            'Поиск в Яндекс...',
+            'Поиск в каталогах...',
+            'Фильтрация результатов...',
+            'Ранжирование по релевантности...',
+            'Формирование отчета...'
+        ];
+
+        let stepIndex = 0;
+        searchProgressInterval = setInterval(() => {
+            progress += Math.random() * 12;
+            if (progress > 95) progress = 95;
+
+            progressBar.style.width = progress + '%';
+
+            if (progress > (stepIndex + 1) * (95 / searchSteps.length)) {
+                stepIndex = Math.min(stepIndex + 1, searchSteps.length - 1);
+                statusText.textContent = searchSteps[stepIndex];
+            }
+        }, 600);
+
+        // Форма отправится стандартным способом, но мы показываем прогресс
+    });
+
+    // Автозаполнение региона с улучшенными подсказками
+    const regionInput = document.getElementById('region');
+    const regions = ['Москва', 'Санкт-Петербург', 'Ставрополь', 'Краснодар', 'Ростов-на-Дону', 'Волгоград'];
+
+    regionInput.addEventListener('input', function() {
+        const value = this.value.toLowerCase();
+        const matchingRegion = regions.find(region => region.toLowerCase().includes(value));
+
+        if (matchingRegion && value.length > 2) {
+            this.value = matchingRegion;
+            this.style.backgroundColor = 'rgba(52, 152, 219, 0.1)';
+            setTimeout(() => {
+                this.style.backgroundColor = '';
+            }, 500);
+        }
+    });
+
+    // Добавление эффектов фокуса для всех полей
+    document.querySelectorAll('input, select, textarea').forEach(element => {
+        element.addEventListener('focus', function() {
+            this.parentElement.style.transform = 'scale(1.02)';
+            this.parentElement.style.transition = 'transform 0.2s ease';
+        });
+
+        element.addEventListener('blur', function() {
+            this.parentElement.style.transform = 'scale(1)';
+        });
+    });
+
+    // Автосохранение формы
+    let formData = {};
+    document.querySelectorAll('input, select').forEach(element => {
+        element.addEventListener('input', function() {
+            formData[this.name] = this.value;
+            localStorage.setItem('searchForm', JSON.stringify(formData));
+        });
+    });
+
+    // Восстановление данных формы при загрузке
+    const savedForm = localStorage.getItem('searchForm');
+    if (savedForm) {
+        const data = JSON.parse(savedForm);
+        Object.keys(data).forEach(key => {
+            const element = document.querySelector(`[name="${key}"]`);
+            if (element) element.value = data[key];
+        });
+    }
+</script>
+{% endblock %} 

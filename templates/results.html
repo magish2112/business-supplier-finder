@@ -1,0 +1,528 @@
+{% extends "base.html" %}
+{% block title %}Результаты поиска - Бизнес-поставщики{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title mb-4">
+                    <i class="fas fa-list me-2"></i>
+                    Результаты поиска
+                </h3>
+                <p>
+                    <strong>Товар:</strong> {{ product }}<br>
+                    <strong>Регион:</strong> {{ region }}<br>
+                    {% if quantity %}<strong>Количество:</strong> {{ quantity }}<br>{% endif %}
+                    <strong>Найдено:</strong> {{ suppliers|length }}
+                </p>
+                {% if suppliers %}
+                    <!-- Статистика результатов -->
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="card bg-primary text-white">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-building fa-2x mb-2"></i>
+                                    <h4>{{ suppliers|length }}</h4>
+                                    <small>Всего поставщиков</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-success text-white">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-star fa-2x mb-2"></i>
+                                    <h4>{{ suppliers|selectattr('company_type', 'equalto', 'producer')|list|length }}</h4>
+                                    <small>Производители</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-info text-white">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-handshake fa-2x mb-2"></i>
+                                    <h4>{{ suppliers|selectattr('company_type', 'equalto', 'distributor')|list|length }}</h4>
+                                    <small>Дистрибьюторы</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-warning text-white">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-warehouse fa-2x mb-2"></i>
+                                    <h4>{{ suppliers|selectattr('company_type', 'equalto', 'wholesale')|list|length }}</h4>
+                                    <small>Оптовики</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Фильтры и сортировка -->
+                    <div class="row mb-4">
+                        <div class="col-md-8">
+                            <div class="btn-group" role="group">
+                                <input type="radio" class="btn-check" name="sort" id="sort-relevance" autocomplete="off" checked>
+                                <label class="btn btn-outline-primary" for="sort-relevance">
+                                    <i class="fas fa-star me-1"></i>По релевантности
+                                </label>
+
+                                <input type="radio" class="btn-check" name="sort" id="sort-producers" autocomplete="off">
+                                <label class="btn btn-outline-success" for="sort-producers">
+                                    <i class="fas fa-industry me-1"></i>Производители
+                                </label>
+
+                                <input type="radio" class="btn-check" name="sort" id="sort-distributors" autocomplete="off">
+                                <label class="btn btn-outline-info" for="sort-distributors">
+                                    <i class="fas fa-truck me-1"></i>Дистрибьюторы
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <a href="{{ url_for('export_results') }}" class="btn btn-success">
+                                <i class="fas fa-download me-1"></i>Экспорт в Excel
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Результаты поиска -->
+                    <div class="row suppliers-grid">
+                        {% for s in suppliers %}
+                        <div class="col-md-6 col-lg-4 mb-4 supplier-card-wrapper"
+                             data-type="{{ s.company_type or 'unknown' }}"
+                             data-relevance="{{ s.relevance_score or 0 }}">
+                            <div class="card h-100 supplier-card">
+                                <div class="card-header bg-light">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <h6 class="card-title mb-0">{{ s.name }}</h6>
+                                        <div class="badges">
+                                            {% if s.company_type == 'producer' %}
+                                                <span class="badge badge-business"><i class="fas fa-industry me-1"></i>Производитель</span>
+                                            {% elif s.company_type == 'distributor' %}
+                                                <span class="badge badge-business"><i class="fas fa-handshake me-1"></i>Дистрибьютор</span>
+                                            {% elif s.company_type == 'wholesale' %}
+                                                <span class="badge badge-business"><i class="fas fa-warehouse me-1"></i>Оптовик</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="card-body">
+                                    <!-- Основная информация -->
+                                    <div class="mb-3">
+                                        {% if s.phone %}
+                                        <div class="contact-item">
+                                            <i class="fas fa-phone text-success me-2"></i>
+                                            <a href="tel:{{ s.phone }}" class="contact-link supplier-link" title="{{ s.phone }}">
+                                                <span class="link-text">{{ s.phone }}</span>
+                                            </a>
+                                        </div>
+                                        {% endif %}
+
+                                        {% if s.email %}
+                                        <div class="contact-item">
+                                            <i class="fas fa-envelope text-primary me-2"></i>
+                                            <a href="mailto:{{ s.email }}" class="contact-link supplier-link" title="{{ s.email }}">
+                                                <span class="link-text">{{ s.email }}</span>
+                                            </a>
+                                        </div>
+                                        {% endif %}
+
+                                        {% if s.website %}
+                                        <div class="contact-item">
+                                            <i class="fas fa-globe text-info me-2"></i>
+                                            <div class="link-container">
+                                                <a href="{{ s.website }}" target="_blank" class="contact-link supplier-link" title="{{ s.website }}">
+                                                    <span class="link-text">{{ s.website|replace('https://', '')|replace('http://', '') }}</span>
+                                                    <i class="fas fa-external-link-alt link-icon small"></i>
+                                                </a>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+
+                                    <!-- Метрики -->
+                                    <div class="row text-center mb-3">
+                                        <div class="col-4">
+                                            <div class="small text-muted">Релевантность</div>
+                                            <div class="fw-bold text-primary">{{ s.relevance_score or 0 }}</div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="small text-muted">Контакты</div>
+                                            <div class="fw-bold text-success">{{ s.contact_completeness or 0 }}%</div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="small text-muted">Источник</div>
+                                            <div class="small fw-bold">{{ s.source or 'Неизвестно' }}</div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Адрес -->
+                                    {% if s.address %}
+                                    <div class="mb-2">
+                                        <i class="fas fa-map-marker-alt text-secondary me-2"></i>
+                                        <small class="text-muted">{{ s.address }}</small>
+                                    </div>
+                                    {% endif %}
+
+                                    <!-- Бизнес-индикаторы -->
+                                    {% if s.business_indicators %}
+                                    <div class="mb-2">
+                                        <small class="text-muted">
+                                            <i class="fas fa-tags me-1"></i>
+                                            {{ s.business_indicators|join(', ') }}
+                                        </small>
+                                    </div>
+                                    {% endif %}
+
+                                    <!-- Описание -->
+                                    {% if s.description %}
+                                    <div class="mt-3">
+                                        <small class="text-muted">{{ s.description[:100] }}{% if s.description|length > 100 %}...{% endif %}</small>
+                                    </div>
+                                    {% endif %}
+                                </div>
+
+                                <div class="card-footer bg-light">
+                                    <div class="d-flex justify-content-between align-items-center flex-wrap">
+                                        <small class="text-muted mb-1 mb-md-0">
+                                            <i class="fas fa-clock me-1"></i>
+                                            {{ s.last_updated.strftime('%d.%m.%Y %H:%M') if s.last_updated else 'Недавно' }}
+                                        </small>
+                                        <button class="btn btn-sm btn-outline-primary" onclick="copyContactInfo('{{ s.name }}', '{{ s.phone or '' }}', '{{ s.email or '' }}', '{{ s.website or '' }}')">
+                                            <i class="fas fa-copy me-1"></i>
+                                            <span class="d-none d-sm-inline">Копировать</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="alert alert-warning mt-4">Поставщики не найдены.</div>
+                {% endif %}
+                <div class="text-center mt-4">
+                    <a href="{{ url_for('search') }}" class="btn btn-primary me-2">
+                        <i class="fas fa-search me-1"></i>Новый поиск
+                    </a>
+                    <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-home me-1"></i>Главная
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для копирования контактов -->
+<div class="modal fade" id="copyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title">
+                    <i class="fas fa-address-card me-2 text-primary"></i>
+                    Контактная информация
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-primary">
+                                <i class="fas fa-building me-1"></i>Название компании:
+                            </label>
+                            <div class="input-group">
+                                <input type="text" class="form-control bg-light" id="copyCompanyName" readonly>
+                                <button class="btn btn-outline-secondary" type="button" onclick="copyField('copyCompanyName')">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-success">
+                                <i class="fas fa-phone me-1"></i>Телефон:
+                            </label>
+                            <div class="input-group">
+                                <input type="text" class="form-control bg-light" id="copyPhone" readonly>
+                                <button class="btn btn-outline-secondary" type="button" onclick="copyField('copyPhone')" id="copyPhoneBtn">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-info">
+                                <i class="fas fa-envelope me-1"></i>Email:
+                            </label>
+                            <div class="input-group">
+                                <input type="text" class="form-control bg-light" id="copyEmail" readonly>
+                                <button class="btn btn-outline-secondary" type="button" onclick="copyField('copyEmail')" id="copyEmailBtn">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-warning">
+                                <i class="fas fa-globe me-1"></i>Сайт:
+                            </label>
+                            <div class="input-group">
+                                <input type="text" class="form-control bg-light" id="copyWebsite" readonly>
+                                <button class="btn btn-outline-secondary" type="button" onclick="copyField('copyWebsite')" id="copyWebsiteBtn">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Закрыть
+                </button>
+                <button type="button" class="btn btn-primary" onclick="copyAllContacts()">
+                    <i class="fas fa-copy me-1"></i>Копировать все контакты
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        initSorting();
+        initAnimations();
+    });
+
+    // Функция сортировки результатов
+    function initSorting() {
+        const sortButtons = document.querySelectorAll('input[name="sort"]');
+
+        sortButtons.forEach(button => {
+            button.addEventListener('change', function() {
+                const sortType = this.id.replace('sort-', '');
+                sortSuppliers(sortType);
+            });
+        });
+    }
+
+    function sortSuppliers(sortType) {
+        const container = document.querySelector('.suppliers-grid');
+        const cards = Array.from(document.querySelectorAll('.supplier-card-wrapper'));
+
+        cards.sort((a, b) => {
+            switch(sortType) {
+                case 'relevance':
+                    return parseInt(b.dataset.relevance) - parseInt(a.dataset.relevance);
+                case 'producers':
+                    const aIsProducer = a.dataset.type === 'producer' ? 1 : 0;
+                    const bIsProducer = b.dataset.type === 'producer' ? 1 : 0;
+                    return bIsProducer - aIsProducer;
+                case 'distributors':
+                    const aIsDistributor = a.dataset.type === 'distributor' ? 1 : 0;
+                    const bIsDistributor = b.dataset.type === 'distributor' ? 1 : 0;
+                    return bIsDistributor - aIsDistributor;
+                default:
+                    return 0;
+            }
+        });
+
+        // Перестраиваем DOM
+        cards.forEach(card => {
+            container.appendChild(card);
+        });
+
+        // Показываем уведомление
+        showToast(`Результаты отсортированы по: ${getSortLabel(sortType)}`, 'info');
+    }
+
+    function getSortLabel(sortType) {
+        const labels = {
+            'relevance': 'релевантности',
+            'producers': 'производителям',
+            'distributors': 'дистрибьюторам'
+        };
+        return labels[sortType] || sortType;
+    }
+
+    // Функция копирования контактной информации
+    function copyContactInfo(name, phone, email, website) {
+        document.getElementById('copyCompanyName').value = name;
+        document.getElementById('copyPhone').value = phone;
+        document.getElementById('copyEmail').value = email;
+        document.getElementById('copyWebsite').value = website;
+
+        // Обновляем состояние кнопок копирования
+        const phoneBtn = document.getElementById('copyPhoneBtn');
+        const emailBtn = document.getElementById('copyEmailBtn');
+        const websiteBtn = document.getElementById('copyWebsiteBtn');
+
+        if (phoneBtn) phoneBtn.disabled = !phone || phone.trim() === '';
+        if (emailBtn) emailBtn.disabled = !email || email.trim() === '';
+        if (websiteBtn) websiteBtn.disabled = !website || website.trim() === '';
+
+        const modal = new bootstrap.Modal(document.getElementById('copyModal'));
+        modal.show();
+    }
+
+    function copyAllContacts() {
+        const name = document.getElementById('copyCompanyName').value;
+        const phone = document.getElementById('copyPhone').value;
+        const email = document.getElementById('copyEmail').value;
+        const website = document.getElementById('copyWebsite').value;
+
+        let contactInfo = `${name}\n`;
+
+        if (phone) contactInfo += `📞 Телефон: ${phone}\n`;
+        if (email) contactInfo += `📧 Email: ${email}\n`;
+        if (website) contactInfo += `🌐 Сайт: ${website}\n`;
+
+        if (!phone && !email && !website) {
+            contactInfo += 'Контактная информация отсутствует';
+        }
+
+        navigator.clipboard.writeText(contactInfo.trim()).then(() => {
+            showToast('✅ Контакты скопированы!', 'success');
+
+            // Закрываем модальное окно
+            const modal = bootstrap.Modal.getInstance(document.getElementById('copyModal'));
+            modal.hide();
+        }).catch(() => {
+            showToast('❌ Ошибка при копировании', 'error');
+        });
+    }
+
+    // Функция для копирования отдельного поля
+    function copyField(fieldId) {
+        const field = document.getElementById(fieldId);
+        const value = field.value;
+
+        if (!value || value.trim() === '') {
+            showToast('⚠️ Поле пустое', 'warning');
+            return;
+        }
+
+        navigator.clipboard.writeText(value).then(() => {
+            showToast('✅ Скопировано!', 'success');
+
+            // Визуальная обратная связь
+            const btn = event.target.closest('button');
+            const originalIcon = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check text-success"></i>';
+            btn.disabled = true;
+
+            setTimeout(() => {
+                btn.innerHTML = originalIcon;
+                btn.disabled = false;
+            }, 1000);
+        }).catch(() => {
+            showToast('❌ Ошибка при копировании', 'error');
+        });
+    }
+
+    // Функция для усечения длинных ссылок при загрузке страницы
+    function truncateLinks() {
+        const linkTexts = document.querySelectorAll('.link-text');
+        linkTexts.forEach(linkText => {
+            const container = linkText.parentElement;
+            const icon = container.querySelector('.link-icon');
+            const maxWidth = container.offsetWidth - (icon ? icon.offsetWidth + 10 : 20);
+
+            if (linkText.scrollWidth > maxWidth) {
+                linkText.style.maxWidth = maxWidth + 'px';
+                linkText.title = linkText.textContent; // Показываем полный текст в tooltip
+            }
+        });
+    }
+
+    // Пересчет размеров при изменении окна
+    window.addEventListener('resize', truncateLinks);
+
+    // Анимации при загрузке страницы
+    function initAnimations() {
+        const cards = document.querySelectorAll('.supplier-card-wrapper');
+        cards.forEach((card, index) => {
+            card.style.opacity = '0';
+            card.style.transform = 'translateY(20px)';
+            card.style.transition = 'all 0.5s ease';
+
+            setTimeout(() => {
+                card.style.opacity = '1';
+                card.style.transform = 'translateY(0)';
+            }, index * 100);
+        });
+
+        // Инициализируем усечение ссылок после загрузки
+        setTimeout(truncateLinks, 100);
+    }
+
+    // Функция для показа уведомлений
+    function showToast(message, type = 'info') {
+        const toastContainer = document.querySelector('.toast-container') || createToastContainer();
+
+        const toast = document.createElement('div');
+        toast.className = `toast align-items-center text-white bg-${type === 'error' ? 'danger' : type} border-0`;
+        toast.setAttribute('role', 'alert');
+        toast.innerHTML = `
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="fas ${getToastIcon(type)} me-2"></i>
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        `;
+
+        toastContainer.appendChild(toast);
+
+        const bsToast = new bootstrap.Toast(toast);
+        bsToast.show();
+
+        // Автоматическое удаление через 3 секунды
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }
+
+    function getToastIcon(type) {
+        const icons = {
+            'success': 'fa-check-circle',
+            'error': 'fa-exclamation-triangle',
+            'warning': 'fa-exclamation-circle',
+            'info': 'fa-info-circle'
+        };
+        return icons[type] || 'fa-info-circle';
+    }
+
+    function createToastContainer() {
+        const container = document.createElement('div');
+        container.className = 'toast-container position-fixed top-0 end-0 p-3';
+        container.style.zIndex = '9999';
+        document.body.appendChild(container);
+        return container;
+    }
+
+    // Экспорт результатов
+    document.addEventListener('click', function(e) {
+        if (e.target.matches('[href*="export"]')) {
+            e.preventDefault();
+            showToast('Подготовка файла для экспорта...', 'info');
+
+            // Имитация загрузки
+            setTimeout(() => {
+                window.location.href = e.target.href;
+                showToast('Файл готов к скачиванию!', 'success');
+            }, 1500);
+        }
+    });
+</script>
+{% endblock %}
