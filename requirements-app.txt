@@ -1,0 +1,14 @@
+# Дополнительный набор (минимальный). Для CI и Docker: requirements.txt в корне.
+# Установка: pip install -r requirements-app.txt
+#
+# anthropic — опционально: нужен только для integrations/claude_client.py;
+#   без пакета complete_json() вернёт "{}" и запишет предупреждение в лог.
+
+flask>=3.0,<4
+requests>=2.31,<3
+beautifulsoup4>=4.12,<5
+python-dotenv>=1.0,<2
+openpyxl>=3.1,<4
+# LLM (ставьте только нужное):
+anthropic>=0.40,<1
+openai>=1.50,<2
