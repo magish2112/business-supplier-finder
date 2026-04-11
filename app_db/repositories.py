@@ -206,6 +206,21 @@ class SupplierRepository:
                 out.append(d)
         return out
 
+    def search_fts(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
+        q = (query or "").strip()
+        if not q:
+            return []
+        cur = self._conn.execute(
+            """
+            SELECT s.* FROM suppliers s
+            INNER JOIN suppliers_fts f ON s.rowid = f.rowid
+            WHERE suppliers_fts MATCH ?
+            LIMIT ?
+            """,
+            (q, limit),
+        )
+        return [_row_to_dict(r) for r in cur.fetchall()]
+
     def insert_or_update(self, data: Dict[str, Any]) -> str:
         now = _utc_now_iso()
         supplier_id = data.get("id")

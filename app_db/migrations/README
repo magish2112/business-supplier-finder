@@ -1,0 +1,1 @@
+Numbered *.sql files (e.g. 0002_feature.sql); run: python -m app_db.migrate (SUPPLIER_DB_PATH).

@@ -24,6 +24,7 @@ from routes.orchestration_routes import orchestration_bp
 from routes.api_security import enforce_api_key, validate_startup_security
 from routes.api_errors import api_error
 from app_db.search_jobs import SearchJobRepository, ensure_search_jobs_table
+from jobs import enqueue_api_search
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -397,33 +398,35 @@ def api_search():
         finally:
             repo_start.close()
 
-        def perform_search():
-            repo = SearchJobRepository()
-            try:
-                finder = BusinessSupplierFinder()
-                suppliers = finder.search_business_suppliers(product, region, quantity)
-                payload = {
-                    'suppliers': suppliers,
-                    'product': product,
-                    'region': region,
-                    'quantity': quantity,
-                    'completed_at': datetime.now().isoformat(),
-                    'total': len(suppliers),
-                }
-                repo.mark_completed(search_id, payload)
-                logger.info(f"✅ API поиск [{search_id}] завершен: найдено {len(suppliers)} поставщиков")
-            except Exception as e:
-                logger.error(f"❌ Ошибка выполнения поиска [{search_id}]: {str(e)}", exc_info=True)
-                try:
-                    repo.mark_failed(search_id, str(e))
-                except Exception as db_e:
-                    logger.error(f"❌ Не удалось записать ошибку задачи: {db_e}", exc_info=True)
-            finally:
-                repo.close()
+        if not enqueue_api_search(search_id, product, region, quantity or ""):
 
-        thread = threading.Thread(target=perform_search)
-        thread.daemon = True
-        thread.start()
+            def perform_search():
+                repo = SearchJobRepository()
+                try:
+                    finder = BusinessSupplierFinder()
+                    suppliers = finder.search_business_suppliers(product, region, quantity)
+                    payload = {
+                        'suppliers': suppliers,
+                        'product': product,
+                        'region': region,
+                        'quantity': quantity,
+                        'completed_at': datetime.now().isoformat(),
+                        'total': len(suppliers),
+                    }
+                    repo.mark_completed(search_id, payload)
+                    logger.info(f"✅ API поиск [{search_id}] завершен: найдено {len(suppliers)} поставщиков")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка выполнения поиска [{search_id}]: {str(e)}", exc_info=True)
+                    try:
+                        repo.mark_failed(search_id, str(e))
+                    except Exception as db_e:
+                        logger.error(f"❌ Не удалось записать ошибку задачи: {db_e}", exc_info=True)
+                finally:
+                    repo.close()
+
+            thread = threading.Thread(target=perform_search)
+            thread.daemon = True
+            thread.start()
 
         return jsonify({
             'success': True,

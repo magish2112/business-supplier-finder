@@ -66,3 +66,33 @@ CREATE TABLE IF NOT EXISTS api_search_jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_search_jobs_status ON api_search_jobs (status);
+
+-- BEGIN FTS5 OPTIONAL
+-- Полнотекстовый индекс поставщиков (FTS5, tokenize unicode61 — базовая поддержка Unicode).
+-- Выполняется отдельно из init_db в ensure_suppliers_fts() в try/except, чтобы сборка без FTS5 не ломала инициализацию.
+CREATE VIRTUAL TABLE IF NOT EXISTS suppliers_fts USING fts5(
+    name,
+    city,
+    activity_direction,
+    inn,
+    content='suppliers',
+    content_rowid='rowid',
+    tokenize='unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS suppliers_fts_ai AFTER INSERT ON suppliers BEGIN
+    INSERT INTO suppliers_fts(rowid, name, city, activity_direction, inn)
+    VALUES (new.rowid, new.name, new.city, new.activity_direction, new.inn);
+END;
+
+CREATE TRIGGER IF NOT EXISTS suppliers_fts_ad AFTER DELETE ON suppliers BEGIN
+    INSERT INTO suppliers_fts(suppliers_fts, rowid, name, city, activity_direction, inn)
+    VALUES ('delete', old.rowid, old.name, old.city, old.activity_direction, old.inn);
+END;
+
+CREATE TRIGGER IF NOT EXISTS suppliers_fts_au AFTER UPDATE ON suppliers BEGIN
+    INSERT INTO suppliers_fts(suppliers_fts, rowid, name, city, activity_direction, inn)
+    VALUES ('delete', old.rowid, old.name, old.city, old.activity_direction, old.inn);
+    INSERT INTO suppliers_fts(rowid, name, city, activity_direction, inn)
+    VALUES (new.rowid, new.name, new.city, new.activity_direction, new.inn);
+END;
