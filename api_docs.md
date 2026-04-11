@@ -10,6 +10,21 @@ REST API для поиска бизнес-поставщиков с исполь
 
 API не требует аутентификации для базовых операций.
 
+### Опциональный API-ключ (`API_KEY` / `X-API-Key`)
+
+Если в окружении задана непустая переменная **`API_KEY`**, для перечисленных ниже JSON-маршрутов нужен заголовок **`X-API-Key: <ключ>`** либо **`Authorization: Bearer <ключ>`**. Иначе ответ **`401`** с объектом ошибки (`code`: `unauthorized`).
+
+Защищаются префиксы:
+
+- `/api/v1/search` (включая `GET`/`POST`)
+- `/api/v1/suppliers`
+- `/api/v1/stats`
+- `/api/v2/`
+- `/api/quick_search/`
+- `/api/saved_search/`
+
+Без ключа по-прежнему доступны **`/api/v1/health`**, **`/api/v1/config`** и HTML-страницы. Если задано **`API_KEY_REQUIRED=true`**, при пустом **`API_KEY`** приложение не запустится.
+
 ## Endpoints
 
 ### 🔍 Поиск поставщиков
@@ -58,6 +73,14 @@ curl -X POST http://localhost:5000/api/v1/search \
 #### Параметры пути
 - `search_id` (string): Уникальный идентификатор поиска
 
+#### Поле `status`
+
+Возможные значения:
+
+- **`in_progress`** — поиск ещё выполняется (поле `message` с пояснением).
+- **`completed`** — успешно завершён; данные в `data` (поставщики и метаданные поиска).
+- **`failed`** — ошибка выполнения; в теле ответа объект **`error`** с полями `code` и `message` (например, `search_failed` и текст об ошибке поиска).
+
 #### Пример запроса
 ```bash
 curl http://localhost:5000/api/v1/search/123e4567-e89b-12d3-a456-426614174000
@@ -68,7 +91,19 @@ curl http://localhost:5000/api/v1/search/123e4567-e89b-12d3-a456-426614174000
 {
   "status": "in_progress",
   "search_id": "123e4567-e89b-12d3-a456-426614174000",
-  "message": "Поиск еще выполняется"
+  "message": "Поиск ещё выполняется"
+}
+```
+
+#### Пример ответа (ошибка)
+```json
+{
+  "status": "failed",
+  "search_id": "123e4567-e89b-12d3-a456-426614174000",
+  "error": {
+    "code": "search_failed",
+    "message": "Ошибка при выполнении поиска"
+  }
 }
 ```
 
@@ -92,9 +127,10 @@ curl http://localhost:5000/api/v1/search/123e4567-e89b-12d3-a456-426614174000
 
 **GET** `/api/v1/suppliers`
 
-Получает поставщиков из последнего поиска с фильтрацией и пагинацией.
+Получает поставщиков с фильтрацией и пагинацией.
 
 #### Query параметры
+- `search_id` (string, опционально): UUID задачи из ответа **POST** `/api/v1/search`. Если указан — выборка из завершённой задачи с этим идентификатором. Если не указан — используется глобальный результат последнего поиска (UI / legacy).
 - `type` (string): Фильтр по типу компании (`PRODUCER`, `DISTRIBUTOR`, etc.)
 - `min_score` (integer): Минимальный рейтинг релевантности (0-100)
 - `limit` (integer): Количество результатов на страницу (по умолчанию 50)
@@ -102,7 +138,7 @@ curl http://localhost:5000/api/v1/search/123e4567-e89b-12d3-a456-426614174000
 
 #### Пример запроса
 ```bash
-curl "http://localhost:5000/api/v1/suppliers?type=PRODUCER&min_score=80&limit=20"
+curl "http://localhost:5000/api/v1/suppliers?search_id=123e4567-e89b-12d3-a456-426614174000&type=PRODUCER&min_score=80&limit=20"
 ```
 
 #### Пример ответа
@@ -135,6 +171,11 @@ curl "http://localhost:5000/api/v1/suppliers?type=PRODUCER&min_score=80&limit=20
 
 Получает статистику приложения и текущего поиска.
 
+В объекте `stats`:
+
+- **`http_cache_entries`** — число записей во внутреннем HTTP-кэше.
+- **`api_search_jobs`** — агрегированные счётчики фоновых задач поиска по статусам: `in_progress`, `completed`, `failed`.
+
 #### Пример запроса
 ```bash
 curl http://localhost:5000/api/v1/stats
@@ -146,8 +187,12 @@ curl http://localhost:5000/api/v1/stats
   "success": true,
   "stats": {
     "total_suppliers": 45,
-    "cached_searches": 3,
-    "active_searches": 1,
+    "http_cache_entries": 12,
+    "api_search_jobs": {
+      "in_progress": 1,
+      "completed": 8,
+      "failed": 0
+    },
     "company_types": {
       "PRODUCER": 15,
       "DISTRIBUTOR": 20,

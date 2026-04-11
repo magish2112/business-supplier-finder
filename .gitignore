@@ -65,8 +65,15 @@ Thumbs.db
 
 # Data files
 *.json
+!pyrightconfig.json
 *.xlsx
 *.txt
+!requirements.txt
+!requirements-app.txt
 
 # Backup files
 *~
+
+# SQLite и кэш тестов
+*.db
+.pytest_cache/

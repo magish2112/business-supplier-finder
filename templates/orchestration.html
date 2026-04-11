@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+
+{% block title %}Поток оркестрации (API v2){% endblock %}
+
+{% block content %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h2 class="card-title h4 mb-3"><i class="fas fa-project-diagram me-2"></i>Оркестрация (v2)</h2>
+        <p class="text-muted small mb-4">Запрос создаётся через <code>/api/v2/requests</code>; подтверждение списка — <code>/api/v2/requests/&lt;id&gt;/confirm-local</code>; отправка — <code>/api/v2/requests/&lt;id&gt;/send-emails</code>. Если на сервере задан <code>API_KEY</code>, при первом запросе браузер спросит ключ (хранится в sessionStorage вкладки).</p>
+        <form id="orch-form" class="row g-3">
+            <div class="col-md-12">
+                <label for="orch-query" class="form-label">Запрос (query)</label>
+                <input type="text" class="form-control" id="orch-query" name="query" required placeholder="Например: сантехника оптом">
+            </div>
+            <div class="col-md-6">
+                <label for="orch-city" class="form-label">Город</label>
+                <input type="text" class="form-control" id="orch-city" name="city" placeholder="Ставрополь">
+            </div>
+            <div class="col-md-6">
+                <label for="orch-direction" class="form-label">Направление деятельности</label>
+                <input type="text" class="form-control" id="orch-direction" name="activity_direction" placeholder="Оптовые поставки">
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary" id="orch-submit">
+                    <i class="fas fa-play me-2"></i>Запустить
+                </button>
+            </div>
+        </form>
+        <div id="orch-alert" class="alert mt-3 d-none" role="alert"></div>
+    </div>
+</div>
+
+<div class="card d-none" id="orch-results-card">
+    <div class="card-body">
+        <h3 class="h5 mb-2">Заявка <code id="orch-req-id"></code></h3>
+        <p class="mb-2"><span class="badge bg-secondary" id="orch-step"></span> <span id="orch-message" class="text-muted"></span></p>
+        <h4 class="h6 mt-4">Поставщики</h4>
+        <ul class="list-group list-group-flush mb-4" id="orch-suppliers"></ul>
+
+        <div id="orch-email-draft-section" class="card bg-light mb-4 d-none border-0">
+            <div class="card-body">
+                <h4 class="h6 mb-3"><i class="fas fa-envelope-open-text me-2"></i>Черновик рассылки</h4>
+                <p class="mb-1 small text-muted">Тема</p>
+                <p class="mb-3" id="orch-email-subject"></p>
+                <p class="mb-1 small text-muted">Текст (превью)</p>
+                <pre class="small bg-white border rounded p-3 mb-3 mb-md-0" id="orch-email-body" style="white-space: pre-wrap;"></pre>
+                <p class="mb-1 small text-muted mt-3">Получатели</p>
+                <ul class="list-group list-group-flush small" id="orch-email-recipients"></ul>
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 mb-3" id="orch-local-confirm-group">
+            <button type="button" class="btn btn-success" id="orch-confirm-yes" disabled>
+                <i class="fas fa-paper-plane me-2"></i>Подтвердить отправку
+            </button>
+            <button type="button" class="btn btn-outline-danger" id="orch-confirm-no" disabled>
+                <i class="fas fa-times me-2"></i>Отказаться
+            </button>
+        </div>
+        <div class="d-flex flex-wrap gap-2" id="orch-send-emails-group">
+            <button type="button" class="btn btn-primary" id="orch-send-smtp" disabled>
+                <i class="fas fa-paper-plane me-2"></i>Выполнить отправку (SMTP)
+            </button>
+            <button type="button" class="btn btn-outline-secondary" id="orch-send-skip" disabled>
+                <i class="fas fa-ban me-2"></i>Не отправлять
+            </button>
+        </div>
+        <p class="small text-muted mt-2 mb-0 d-none" id="orch-send-route-hint">Маршрут <code>/send-emails</code> пока недоступен (обновите бэкенд).</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const form = document.getElementById('orch-form');
+    const alertEl = document.getElementById('orch-alert');
+    const resultsCard = document.getElementById('orch-results-card');
+    const reqIdEl = document.getElementById('orch-req-id');
+    const stepEl = document.getElementById('orch-step');
+    const msgEl = document.getElementById('orch-message');
+    const listEl = document.getElementById('orch-suppliers');
+    const btnYes = document.getElementById('orch-confirm-yes');
+    const btnNo = document.getElementById('orch-confirm-no');
+    const draftSection = document.getElementById('orch-email-draft-section');
+    const draftSubjectEl = document.getElementById('orch-email-subject');
+    const draftBodyEl = document.getElementById('orch-email-body');
+    const draftRecipientsEl = document.getElementById('orch-email-recipients');
+    const btnSendSmtp = document.getElementById('orch-send-smtp');
+    const btnSendSkip = document.getElementById('orch-send-skip');
+    const sendRouteHint = document.getElementById('orch-send-route-hint');
+    let currentId = null;
+    const apiFetch = (typeof window.bizsfApiFetch === 'function') ? window.bizsfApiFetch : fetch;
+
+    function apiErrMsg(j) {
+        if (!j || j.error == null) return '';
+        if (typeof j.error === 'string') return j.error;
+        if (typeof j.error === 'object' && j.error.message) return j.error.message;
+        return '';
+    }
+
+    function showAlert(kind, text) {
+        alertEl.className = 'alert mt-3 alert-' + (kind === 'error' ? 'danger' : 'info');
+        alertEl.textContent = text;
+        alertEl.classList.remove('d-none');
+    }
+
+    function hideAlert() {
+        alertEl.classList.add('d-none');
+    }
+
+    function escapeHtml(str) {
+        const d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+
+    function isFullState(obj) {
+        return obj && typeof obj.request_id === 'string' && typeof obj.step === 'string';
+    }
+
+    function fetchRequestState() {
+        if (!currentId) return Promise.resolve();
+        return apiFetch('/api/v2/requests/' + encodeURIComponent(currentId))
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (ref) {
+                if (!ref.ok) throw new Error(apiErrMsg(ref.j) || 'Не удалось загрузить состояние');
+                renderState(ref.j);
+            });
+    }
+
+    function applyActionResult(j) {
+        if (isFullState(j)) {
+            renderState(j);
+            return Promise.resolve();
+        }
+        return fetchRequestState();
+    }
+
+    function renderEmailDraft(draft) {
+        draftRecipientsEl.innerHTML = '';
+        if (!draft) {
+            draftSubjectEl.textContent = '';
+            draftBodyEl.textContent = '';
+            const li = document.createElement('li');
+            li.className = 'list-group-item text-muted border-0 px-0';
+            li.textContent = 'Черновик не передан в ответе API.';
+            draftRecipientsEl.appendChild(li);
+            return;
+        }
+        draftSubjectEl.textContent = draft.subject || '';
+        var body = draft.body_preview != null ? draft.body_preview : (draft.body != null ? draft.body : '');
+        draftBodyEl.textContent = body;
+        var recips = draft.recipients || [];
+        if (!recips.length) {
+            var empty = document.createElement('li');
+            empty.className = 'list-group-item text-muted border-0 px-0';
+            empty.textContent = 'Нет адресов в списке получателей.';
+            draftRecipientsEl.appendChild(empty);
+            return;
+        }
+        recips.forEach(function (addr) {
+            var li = document.createElement('li');
+            li.className = 'list-group-item border-0 px-0';
+            li.textContent = String(addr);
+            draftRecipientsEl.appendChild(li);
+        });
+    }
+
+    function supplierExtras(s) {
+        const parts = [];
+        if (s.website) {
+            var w = String(s.website).trim();
+            if (w) parts.push('Сайт: ' + escapeHtml(w));
+        }
+        if (s.email) parts.push('Email: ' + escapeHtml(String(s.email)));
+        if (s.city) parts.push('Город: ' + escapeHtml(String(s.city)));
+        if (s.phone) parts.push('Тел: ' + escapeHtml(String(s.phone)));
+        if (s.note) parts.push(escapeHtml(String(s.note)));
+        return parts.length ? '<br><small class="text-muted">' + parts.join(' · ') + '</small>' : '';
+    }
+
+    function renderState(data) {
+        currentId = data.request_id;
+        reqIdEl.textContent = data.request_id;
+        stepEl.textContent = data.step || '';
+        msgEl.textContent = data.message || '';
+        listEl.innerHTML = '';
+        (data.suppliers || []).forEach(function (s, i) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+            const name = s.name || s.title || ('Поставщик ' + (i + 1));
+            li.innerHTML = '<strong>' + escapeHtml(name) + '</strong>' + supplierExtras(s);
+            listEl.appendChild(li);
+        });
+        resultsCard.classList.remove('d-none');
+
+        var step = data.step || '';
+        var isLocal = step === 'AWAIT_USER_LOCAL_CONFIRM';
+        var isSendConfirm = step === 'AWAIT_SEND_CONFIRM';
+
+        btnYes.disabled = !isLocal;
+        btnNo.disabled = !isLocal;
+
+        if (isSendConfirm) {
+            draftSection.classList.remove('d-none');
+            renderEmailDraft(data.email_draft);
+            btnSendSmtp.disabled = false;
+            btnSendSkip.disabled = false;
+        } else {
+            draftSection.classList.add('d-none');
+            btnSendSmtp.disabled = true;
+            btnSendSkip.disabled = true;
+        }
+
+        sendRouteHint.classList.add('d-none');
+    }
+
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        hideAlert();
+        const body = {
+            query: document.getElementById('orch-query').value.trim(),
+            city: document.getElementById('orch-city').value.trim(),
+            activity_direction: document.getElementById('orch-direction').value.trim()
+        };
+        apiFetch('/api/v2/requests', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+            .then(function (_ref) {
+                if (!_ref.ok) throw new Error(apiErrMsg(_ref.j) || ('HTTP ' + _ref.status));
+                renderState(_ref.j);
+                if (typeof showToast === 'function') showToast('Заявка создана', 'success');
+            })
+            .catch(function (err) {
+                showAlert('error', err.message || String(err));
+            });
+    });
+
+    function postConfirm(send) {
+        if (!currentId) return;
+        apiFetch('/api/v2/requests/' + encodeURIComponent(currentId) + '/confirm-local', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ send: send })
+        })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+            .then(function (_ref2) {
+                if (!_ref2.ok) throw new Error(apiErrMsg(_ref2.j) || 'Ошибка');
+                return applyActionResult(_ref2.j).then(function () {
+                    if (typeof showToast === 'function') {
+                        showToast(send ? 'Отправка подтверждена' : 'Отказ зафиксирован', 'success');
+                    }
+                });
+            })
+            .catch(function (err) {
+                showAlert('error', err.message || String(err));
+            });
+    }
+
+    function postSendEmails(execute) {
+        if (!currentId) return;
+        hideAlert();
+        sendRouteHint.classList.add('d-none');
+        var url = '/api/v2/requests/' + encodeURIComponent(currentId) + '/send-emails';
+        try {
+            apiFetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ execute: execute })
+            })
+                .then(function (r) {
+                    return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }).catch(function () {
+                        return { ok: r.ok, status: r.status, j: {} };
+                    });
+                })
+                .then(function (ref) {
+                    if (ref.status === 404) {
+                        sendRouteHint.classList.remove('d-none');
+                        showAlert('error', 'Маршрут отправки писем ещё не подключён (404).');
+                        return;
+                    }
+                    if (!ref.ok) throw new Error(apiErrMsg(ref.j) || ('HTTP ' + ref.status));
+                    return applyActionResult(ref.j).then(function () {
+                        if (typeof showToast === 'function') {
+                            showToast(execute ? 'Запрос на отправку выполнен' : 'Отправка отменена', 'success');
+                        }
+                    });
+                })
+                .catch(function (err) {
+                    showAlert('error', err.message || String(err));
+                });
+        } catch (err) {
+            showAlert('error', err.message || String(err));
+        }
+    }
+
+    btnYes.addEventListener('click', function () { postConfirm(true); });
+    btnNo.addEventListener('click', function () { postConfirm(false); });
+    btnSendSmtp.addEventListener('click', function () { postSendEmails(true); });
+    btnSendSkip.addEventListener('click', function () { postSendEmails(false); });
+})();
+</script>
+{% endblock %}

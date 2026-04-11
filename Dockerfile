@@ -27,6 +27,7 @@ RUN mkdir -p /app/logs
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=web_app.py
 ENV FLASK_ENV=production
+ENV FLASK_DEBUG=false
 
 # Создаем пользователя для безопасности
 RUN useradd --create-home --shell /bin/bash app \
@@ -40,5 +41,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5000/api/v1/health || exit 1
 
-# Запуск приложения
-CMD ["python", "web_app.py"]
+# WSGI (A4): встроенный сервер Flask не использовать в проде
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "web_app:app"]

@@ -113,16 +113,26 @@
 <script>
     let socket = null;
     let startTime = new Date();
-    let searchId = '{{ search_id }}';
+    let searchId = {{ search_id | tojson }};
+    const resultsUrl = {{ url_for('show_results') | tojson }};
 
     document.addEventListener('DOMContentLoaded', function() {
         initWebSocket();
+        updateStepIndicators('init');
         updateTimer();
         setInterval(updateTimer, 1000);
     });
 
     function initWebSocket() {
-        socket = io('/search');
+        if (typeof io !== 'function') {
+            return;
+        }
+        try {
+            socket = io('/search');
+        } catch (e) {
+            console.warn('Socket.IO init skipped:', e);
+            return;
+        }
 
         socket.on('connect', function() {
             console.log('Connected to WebSocket');
@@ -177,20 +187,35 @@
         }
     }
 
+    /** Этапы в разметке: step-init, step-google, step-yandex, step-complete */
+    function normalizeProgressStep(step) {
+        if (!step) return 'init';
+        if (step === 'catalogs' || step === 'filtering') return 'yandex';
+        return step;
+    }
+
     function updateStepIndicators(activeStep) {
-        const steps = ['init', 'google', 'yandex', 'catalogs', 'filtering', 'complete'];
-        const stepElements = steps.map(step => document.getElementById('step-' + step));
+        const steps = ['init', 'google', 'yandex', 'complete'];
+        const normalized = normalizeProgressStep(activeStep);
+        const activeIndex = steps.indexOf(normalized);
+        const currentIndex = activeIndex === -1 ? 0 : activeIndex;
 
-        stepElements.forEach((element, index) => {
+        steps.forEach(function (stepName, index) {
+            const element = document.getElementById('step-' + stepName);
             if (!element) return;
-
-            const stepName = steps[index];
             const icon = element.querySelector('i');
+            if (!icon) return;
 
-            if (stepName === activeStep) {
+            element.classList.remove('active', 'completed');
+            icon.classList.remove('text-primary', 'text-success');
+            if (!icon.classList.contains('text-secondary')) {
+                icon.classList.add('text-secondary');
+            }
+
+            if (index === currentIndex) {
                 element.classList.add('active');
                 icon.className = icon.className.replace('text-secondary', 'text-primary');
-            } else if (steps.indexOf(activeStep) > index) {
+            } else if (currentIndex > index) {
                 element.classList.add('completed');
                 icon.className = icon.className.replace('text-secondary', 'text-success');
             }
@@ -218,13 +243,13 @@
         alert.innerHTML = `
             <i class="fas fa-check-circle me-2"></i>
             Найдено ${suppliers.length} поставщиков!
-            <a href="/results/${searchId}" class="alert-link ms-2">Посмотреть результаты</a>
+            <a href="${resultsUrl}" class="alert-link ms-2">Посмотреть результаты</a>
         `;
         messagesDiv.appendChild(alert);
 
         // Автоматическое перенаправление через 3 секунды
         setTimeout(() => {
-            window.location.href = `/results/${searchId}`;
+            window.location.href = resultsUrl;
         }, 3000);
     }
 
@@ -246,7 +271,7 @@
         alert.innerHTML = `
             <i class="fas fa-check-circle me-2"></i>
             Поиск завершен! Найдено ${data.count} поставщиков.
-            <a href="/results/${searchId}" class="alert-link ms-2">Посмотреть результаты</a>
+            <a href="${resultsUrl}" class="alert-link ms-2">Посмотреть результаты</a>
         `;
         messagesDiv.appendChild(alert);
     }

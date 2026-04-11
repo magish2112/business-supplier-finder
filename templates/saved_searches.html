@@ -109,12 +109,105 @@
 
 {% block scripts %}
 <script>
+    function safeHttpUrl(url) {
+        if (!url || typeof url !== 'string') return '';
+        try {
+            const u = new URL(url.trim());
+            if (u.protocol === 'http:' || u.protocol === 'https:') return u.href;
+        } catch (e) {}
+        return '';
+    }
+
+    function appendSupplierCard(col, supplier) {
+        const card = document.createElement('div');
+        card.className = 'card supplier-card';
+        col.appendChild(card);
+        const cardBody = document.createElement('div');
+        cardBody.className = 'card-body';
+        card.appendChild(cardBody);
+
+        const title = document.createElement('h6');
+        title.className = 'card-title';
+        title.textContent = supplier.name != null ? String(supplier.name) : '';
+        cardBody.appendChild(title);
+
+        const badgeRow = document.createElement('div');
+        badgeRow.className = 'mb-2';
+        cardBody.appendChild(badgeRow);
+        if (supplier.is_business) {
+            const biz = document.createElement('span');
+            biz.className = 'badge badge-business me-1';
+            const bizIcon = document.createElement('i');
+            bizIcon.className = 'fas fa-building me-1';
+            biz.appendChild(bizIcon);
+            biz.appendChild(document.createTextNode('Бизнес'));
+            badgeRow.appendChild(biz);
+        }
+        const rel = document.createElement('span');
+        rel.className = 'badge badge-relevance';
+        const star = document.createElement('i');
+        star.className = 'fas fa-star me-1';
+        rel.appendChild(star);
+        rel.appendChild(document.createTextNode(String(supplier.relevance_score != null ? supplier.relevance_score : 0)));
+        badgeRow.appendChild(rel);
+
+        if (supplier.phone) {
+            const row = document.createElement('div');
+            row.className = 'mb-1';
+            const phIcon = document.createElement('i');
+            phIcon.className = 'fas fa-phone text-success me-2';
+            row.appendChild(phIcon);
+            row.appendChild(document.createTextNode(String(supplier.phone)));
+            cardBody.appendChild(row);
+        }
+        if (supplier.email) {
+            const row = document.createElement('div');
+            row.className = 'mb-1';
+            const emIcon = document.createElement('i');
+            emIcon.className = 'fas fa-envelope text-primary me-2';
+            row.appendChild(emIcon);
+            row.appendChild(document.createTextNode(String(supplier.email)));
+            cardBody.appendChild(row);
+        }
+        if (supplier.website) {
+            const row = document.createElement('div');
+            row.className = 'mb-1';
+            const wIcon = document.createElement('i');
+            wIcon.className = 'fas fa-globe text-info me-2';
+            row.appendChild(wIcon);
+            const href = safeHttpUrl(supplier.website);
+            const display = String(supplier.website).replace(/^https?:\/\//i, '');
+            if (href) {
+                const a = document.createElement('a');
+                a.href = href;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                a.textContent = display;
+                row.appendChild(a);
+            } else {
+                row.appendChild(document.createTextNode(display));
+            }
+            cardBody.appendChild(row);
+        }
+
+        const foot = document.createElement('div');
+        foot.className = 'mt-2';
+        const small = document.createElement('small');
+        small.className = 'text-muted';
+        const srcIcon = document.createElement('i');
+        srcIcon.className = 'fas fa-search me-1';
+        small.appendChild(srcIcon);
+        small.appendChild(document.createTextNode(supplier.source != null ? String(supplier.source) : 'Неизвестно'));
+        foot.appendChild(small);
+        cardBody.appendChild(foot);
+    }
+
     function loadSearch(filename) {
         // Показать загрузку
         showLoading();
         
         // Загрузить результаты поиска
-        fetch(`/api/saved_search/${filename}`)
+        (typeof window.bizsfApiFetch === 'function' ? window.bizsfApiFetch : fetch)(`/api/saved_search/${filename}`)
             .then(response => response.json())
             .then(data => {
                 hideLoading();
@@ -122,7 +215,9 @@
                 if (data.success) {
                     displayModalResults(data);
                 } else {
-                    showToast('Ошибка при загрузке: ' + data.error, 'error');
+                    const err = data.error;
+                    const msg = typeof err === 'string' ? err : (err && err.message) ? err.message : JSON.stringify(err);
+                    showToast('Ошибка при загрузке: ' + msg, 'error');
                 }
             })
             .catch(error => {
@@ -133,80 +228,49 @@
     
     function displayModalResults(data) {
         const modalContent = document.getElementById('modalResultsContent');
-        
-        let html = `
-            <div class="row mb-3">
-                <div class="col-md-4">
-                    <strong>Товар:</strong> ${data.product}
-                </div>
-                <div class="col-md-4">
-                    <strong>Регион:</strong> ${data.region}
-                </div>
-                <div class="col-md-4">
-                    <strong>Найдено:</strong> ${data.suppliers.length}
-                </div>
-            </div>
-        `;
-        
-        if (data.suppliers.length > 0) {
-            html += '<div class="row">';
-            
-            data.suppliers.forEach(supplier => {
-                html += `
-                    <div class="col-md-6 mb-3">
-                        <div class="card supplier-card">
-                            <div class="card-body">
-                                <h6 class="card-title">${supplier.name}</h6>
-                                
-                                <div class="mb-2">
-                                    ${supplier.is_business ? 
-                                        '<span class="badge badge-business me-1"><i class="fas fa-building me-1"></i>Бизнес</span>' : 
-                                        ''
-                                    }
-                                    <span class="badge badge-relevance">
-                                        <i class="fas fa-star me-1"></i>${supplier.relevance_score || 0}
-                                    </span>
-                                </div>
-                                
-                                ${supplier.phone ? 
-                                    `<div class="mb-1"><i class="fas fa-phone text-success me-2"></i>${supplier.phone}</div>` : 
-                                    ''
-                                }
-                                
-                                ${supplier.email ? 
-                                    `<div class="mb-1"><i class="fas fa-envelope text-primary me-2"></i>${supplier.email}</div>` : 
-                                    ''
-                                }
-                                
-                                ${supplier.website ? 
-                                    `<div class="mb-1"><i class="fas fa-globe text-info me-2"></i><a href="${supplier.website}" target="_blank">${supplier.website.replace('https://', '').replace('http://', '')}</a></div>` : 
-                                    ''
-                                }
-                                
-                                <div class="mt-2">
-                                    <small class="text-muted">
-                                        <i class="fas fa-search me-1"></i>${supplier.source || 'Неизвестно'}
-                                    </small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            html += '</div>';
-        } else {
-            html += `
-                <div class="text-center">
-                    <i class="fas fa-search fa-2x text-muted mb-3"></i>
-                    <p>Поставщики не найдены</p>
-                </div>
-            `;
+        modalContent.replaceChildren();
+
+        const summaryRow = document.createElement('div');
+        summaryRow.className = 'row mb-3';
+        modalContent.appendChild(summaryRow);
+
+        function addSummaryCol(label, value) {
+            const col = document.createElement('div');
+            col.className = 'col-md-4';
+            const strong = document.createElement('strong');
+            strong.textContent = label;
+            col.appendChild(strong);
+            col.appendChild(document.createTextNode(' ' + (value != null ? String(value) : '')));
+            summaryRow.appendChild(col);
         }
-        
-        modalContent.innerHTML = html;
-        
-        // Показать модальное окно
+        addSummaryCol('Товар:', data.product);
+        addSummaryCol('Регион:', data.region);
+        addSummaryCol('Найдено:', String((data.suppliers || []).length));
+
+        const suppliers = data.suppliers || [];
+        if (suppliers.length > 0) {
+            const grid = document.createElement('div');
+            grid.className = 'row';
+            modalContent.appendChild(grid);
+
+            suppliers.forEach(function (supplier) {
+                const col = document.createElement('div');
+                col.className = 'col-md-6 mb-3';
+                grid.appendChild(col);
+                appendSupplierCard(col, supplier);
+            });
+        } else {
+            const empty = document.createElement('div');
+            empty.className = 'text-center';
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-search fa-2x text-muted mb-3';
+            empty.appendChild(icon);
+            const p = document.createElement('p');
+            p.textContent = 'Поставщики не найдены';
+            empty.appendChild(p);
+            modalContent.appendChild(empty);
+        }
+
         const modal = new bootstrap.Modal(document.getElementById('searchResultsModal'));
         modal.show();
     }
@@ -228,7 +292,7 @@
         const toast = document.createElement('div');
         toast.className = `alert alert-${type === 'success' ? 'success' : 'danger'} position-fixed`;
         toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999;';
-        toast.innerHTML = message;
+        toast.textContent = message != null ? String(message) : '';
         
         document.body.appendChild(toast);
         

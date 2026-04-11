@@ -74,10 +74,10 @@ def test_extended_search():
             print(f"   ❌ Ошибка: {e}")
 
     print("\n" + "=" * 60)
-    print("📈 СТАТИСТИКА ТЕСТИРОВАНИЯ:"    print("=" * 60)
+    print("📈 СТАТИСТИКА ТЕСТИРОВАНИЯ:")
+    print("=" * 60)
     print(f"Всего протестировано источников: {len(test_sources)}")
     print(f"Общее количество результатов: {total_results}")
-    print(".1f"
     print("\n🎯 РЕКОМЕНДАЦИИ:")
     print("-" * 30)
 

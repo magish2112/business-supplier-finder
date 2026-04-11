@@ -4,19 +4,31 @@
 """
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response
+from werkzeug.exceptions import HTTPException, NotFound
 from business_supplier_finder import BusinessSupplierFinder, OPENAI_AVAILABLE, PERPLEXITY_CONFIG
 import json
 import logging
 import threading
 from datetime import datetime
 import os
+import socket
+from pathlib import Path
+from urllib.parse import urlparse
+from typing import Optional
 from dotenv import load_dotenv
 from functools import wraps
 import time
 import uuid
 
+from routes.orchestration_routes import orchestration_bp
+from routes.api_security import enforce_api_key, validate_startup_security
+from routes.api_errors import api_error
+from app_db.search_jobs import SearchJobRepository, ensure_search_jobs_table
+
 # Загружаем переменные окружения
 load_dotenv()
+validate_startup_security()
+ensure_search_jobs_table()
 
 # Настройка логирования для веб-приложения
 logging.basicConfig(
@@ -33,10 +45,18 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'default_secret_key_change_in_production')
 
+app.register_blueprint(orchestration_bp)
+
+
+@app.before_request
+def _require_api_key_for_protected_api():
+    """A1: защита JSON API при заданной переменной API_KEY."""
+    return enforce_api_key()
+
+
 # Глобальные переменные для хранения результатов поиска
 search_results = []
-active_searches = {}  # Словарь для отслеживания активных поисков
-search_cache = {}     # Кэш результатов поиска
+search_cache = {}  # Кэш HTTP (@cache_search); не путать с api_search_jobs в SQLite
 
 # Декоратор для кэширования результатов поиска
 def cache_search(timeout=300):  # 5 минут кэширования
@@ -177,6 +197,18 @@ def quick_search():
     """Быстрый поиск"""
     return render_template('quick_search.html')
 
+
+@app.route('/search_progress')
+def search_progress():
+    """Демо UI прогресса поиска (рендер без Socket.IO на сервере)."""
+    return render_template(
+        'search_progress.html',
+        product=request.args.get('product', 'Демо-товар'),
+        region=request.args.get('region', 'Демо-регион'),
+        quantity=request.args.get('quantity', 'опт'),
+        search_id=request.args.get('search_id', '').strip() or str(uuid.uuid4()),
+    )
+
 @app.route('/api/quick_search/<search_type>')
 def api_quick_search(search_type):
     """API для быстрого поиска"""
@@ -201,7 +233,7 @@ def api_quick_search(search_type):
     }
     
     if search_type not in quick_searches:
-        return jsonify({'error': 'Неизвестный тип поиска'})
+        return api_error("unknown_search_type", "Неизвестный тип поиска", 400)
     
     search_data = quick_searches[search_type]
     
@@ -225,7 +257,7 @@ def api_quick_search(search_type):
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)})
+        return api_error("quick_search_failed", str(e), 500)
 
 @app.route('/results')
 def show_results():
@@ -269,7 +301,7 @@ def export_results():
         return jsonify({'success': True, 'filename': filename})
         
     except Exception as e:
-        return jsonify({'error': str(e)})
+        return api_error("export_failed", str(e), 500)
 
 @app.route('/saved_searches')
 def saved_searches():
@@ -296,11 +328,26 @@ def saved_searches():
     
     return render_template('saved_searches.html', searches=searches)
 
+def _safe_saved_search_path(filename: str) -> Optional[Path]:
+    """Только файлы web_search_*.json в текущей рабочей директории (без path traversal)."""
+    name = Path(filename).name
+    if not name.startswith("web_search_") or not name.endswith(".json"):
+        return None
+    root = Path.cwd().resolve()
+    path = (root / name).resolve()
+    if path.parent != root or not path.is_file():
+        return None
+    return path
+
+
 @app.route('/api/saved_search/<filename>')
 def api_saved_search(filename):
     """API для загрузки сохраненного поиска"""
+    path = _safe_saved_search_path(filename)
+    if path is None:
+        return api_error("invalid_filename", "Недопустимое имя файла", 400)
     try:
-        with open(filename, 'r', encoding='utf-8') as f:
+        with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
         
         global search_results
@@ -315,7 +362,7 @@ def api_saved_search(filename):
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)})
+        return api_error("saved_search_read_failed", str(e), 500)
 
 # ================================
 # REST API ENDPOINTS
@@ -323,75 +370,61 @@ def api_saved_search(filename):
 
 @app.route('/api/v1/search', methods=['POST'])
 def api_search():
-    """REST API для поиска поставщиков"""
+    """REST API для поиска поставщиков (состояние задачи в SQLite, см. api_search_jobs)."""
     try:
         data = request.get_json()
 
         if not data:
-            return jsonify({'error': 'No JSON data provided'}), 400
+            return api_error("bad_request", "Тело запроса должно быть JSON", 400)
 
         product = data.get('product', '').strip()
         region = data.get('region', '').strip()
         quantity = data.get('quantity', '')
 
         if not product:
-            return jsonify({'error': 'Product name is required'}), 400
+            return api_error("validation_error", "Поле product обязательно", 400)
 
-        # Генерируем уникальный ID поиска
         search_id = str(uuid.uuid4())
 
         logger.info(f"🔍 API поиск [{search_id}]: {product}, регион: {region}, количество: {quantity}")
 
-        # Добавляем в активные поиски
-        global active_searches
-        active_searches[search_id] = {
-            'status': 'in_progress',
-            'product': product,
-            'region': region,
-            'quantity': quantity,
-            'started_at': datetime.now().isoformat()
-        }
+        repo_start = SearchJobRepository()
+        try:
+            repo_start.create_job(search_id, product, region, quantity or "")
+        except Exception as e:
+            logger.error(f"❌ Не удалось записать задачу поиска: {e}", exc_info=True)
+            return api_error("internal_error", "Не удалось создать задачу поиска", 500)
+        finally:
+            repo_start.close()
 
-        # Запускаем поиск в отдельном потоке
         def perform_search():
+            repo = SearchJobRepository()
             try:
-                # Создаем экземпляр поисковика
                 finder = BusinessSupplierFinder()
-
-                # Выполняем поиск
                 suppliers = finder.search_business_suppliers(product, region, quantity)
-
-                # Сохраняем результаты в кэше
-                global search_cache
-                cache_key = f"search_{search_id}"
-                search_cache[cache_key] = {
+                payload = {
                     'suppliers': suppliers,
                     'product': product,
                     'region': region,
                     'quantity': quantity,
                     'completed_at': datetime.now().isoformat(),
-                    'total': len(suppliers)
+                    'total': len(suppliers),
                 }
-
-                # Удаляем из активных поисков
-                if search_id in active_searches:
-                    del active_searches[search_id]
-
+                repo.mark_completed(search_id, payload)
                 logger.info(f"✅ API поиск [{search_id}] завершен: найдено {len(suppliers)} поставщиков")
-
             except Exception as e:
-                logger.error(f"❌ Ошибка выполнения поиска [{search_id}]: {str(e)}")
-                # Обновляем статус поиска
-                if search_id in active_searches:
-                    active_searches[search_id]['status'] = 'error'
-                    active_searches[search_id]['error'] = str(e)
+                logger.error(f"❌ Ошибка выполнения поиска [{search_id}]: {str(e)}", exc_info=True)
+                try:
+                    repo.mark_failed(search_id, str(e))
+                except Exception as db_e:
+                    logger.error(f"❌ Не удалось записать ошибку задачи: {db_e}", exc_info=True)
+            finally:
+                repo.close()
 
-        # Запускаем поиск в фоне
         thread = threading.Thread(target=perform_search)
         thread.daemon = True
         thread.start()
 
-        # Возвращаем ID поиска
         return jsonify({
             'success': True,
             'search_id': search_id,
@@ -401,50 +434,86 @@ def api_search():
         })
 
     except Exception as e:
-        logger.error(f"❌ Ошибка API поиска: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"❌ Ошибка API поиска: {str(e)}", exc_info=True)
+        return api_error("internal_error", "Внутренняя ошибка сервера", 500)
 
 @app.route('/api/v1/search/<search_id>', methods=['GET'])
 def api_get_search_results(search_id):
-    """Получить результаты поиска по ID"""
+    """Статус и результат фонового поиска по search_id (хранение в api_search_jobs)."""
     try:
-        # Проверяем активные поиски
-        if search_id in active_searches:
+        repo = SearchJobRepository()
+        try:
+            job = repo.get(search_id)
+        finally:
+            repo.close()
+
+        if not job:
+            return api_error("not_found", "Задача поиска не найдена", 404)
+
+        st = job.get("status") or ""
+        if st == "in_progress":
             return jsonify({
                 'status': 'in_progress',
                 'search_id': search_id,
-                'message': 'Поиск еще выполняется'
+                'message': 'Поиск ещё выполняется'
+            })
+        if st == "failed":
+            return jsonify({
+                'status': 'failed',
+                'search_id': search_id,
+                'error': {
+                    'code': 'search_failed',
+                    'message': 'Ошибка при выполнении поиска',
+                }
             })
 
-        # Ищем в кэше
-        cache_key = f"search_{search_id}"
-        if cache_key in search_cache:
-            cached_data = search_cache[cache_key]
+        if st == "completed":
+            data = job.get("_result") or {}
             return jsonify({
                 'status': 'completed',
                 'search_id': search_id,
-                'data': cached_data
+                'data': data
             })
 
-        return jsonify({'error': 'Search not found'}), 404
+        return api_error("invalid_state", "Неизвестное состояние задачи", 500)
 
     except Exception as e:
-        logger.error(f"❌ Ошибка получения результатов поиска: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"❌ Ошибка получения результатов поиска: {str(e)}", exc_info=True)
+        return api_error("internal_error", "Внутренняя ошибка сервера", 500)
 
 @app.route('/api/v1/suppliers', methods=['GET'])
 def api_get_suppliers():
-    """Получить всех поставщиков из последнего поиска"""
+    """
+    Поставщики из результата поиска.
+
+    Query ``search_id`` — UUID задачи POST /api/v1/search (рекомендуется для REST).
+    Без ``search_id`` — глобальный ``search_results`` (последний поиск через UI/legacy).
+    """
     try:
         global search_results
 
-        # Параметры фильтрации
         company_type = request.args.get('type')
         min_score = request.args.get('min_score')
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
+        job_search_id = (request.args.get('search_id') or '').strip()
 
-        suppliers = search_results.copy()
+        if job_search_id:
+            repo = SearchJobRepository()
+            try:
+                job = repo.get(job_search_id)
+            finally:
+                repo.close()
+            if not job or job.get('status') != 'completed':
+                return api_error(
+                    "not_found",
+                    "Нет завершённой задачи поиска с таким search_id",
+                    404,
+                )
+            result = job.get('_result') or {}
+            suppliers = list(result.get('suppliers') or [])
+        else:
+            suppliers = search_results.copy()
 
         # Применяем фильтры
         if company_type:
@@ -472,8 +541,8 @@ def api_get_suppliers():
         })
 
     except Exception as e:
-        logger.error(f"❌ Ошибка получения поставщиков: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"❌ Ошибка получения поставщиков: {str(e)}", exc_info=True)
+        return api_error("internal_error", "Внутренняя ошибка сервера", 500)
 
 @app.route('/api/v1/stats', methods=['GET'])
 def api_get_stats():
@@ -496,12 +565,22 @@ def api_get_stats():
         avg_score = total_score / len(search_results) if search_results else 0
         avg_contacts = total_contacts / len(search_results) if search_results else 0
 
+        repo = SearchJobRepository()
+        try:
+            job_counts = repo.counts_by_status()
+        finally:
+            repo.close()
+
         return jsonify({
             'success': True,
             'stats': {
                 'total_suppliers': len(search_results),
-                'cached_searches': len(search_cache),
-                'active_searches': len(active_searches),
+                'http_cache_entries': len(search_cache),
+                'api_search_jobs': {
+                    'in_progress': job_counts.get('in_progress', 0),
+                    'completed': job_counts.get('completed', 0),
+                    'failed': job_counts.get('failed', 0),
+                },
                 'company_types': company_types,
                 'average_score': round(avg_score, 1),
                 'average_contacts': round(avg_contacts, 1),
@@ -510,21 +589,41 @@ def api_get_stats():
         })
 
     except Exception as e:
-        logger.error(f"❌ Ошибка получения статистики: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"❌ Ошибка получения статистики: {str(e)}", exc_info=True)
+        return api_error("internal_error", "Внутренняя ошибка сервера", 500)
+
+def _redis_tcp_reachable(redis_url: str, timeout_sec: float = 1.0) -> bool:
+    """TCP-доступность Redis по REDIS_URL (без redis-клиента)."""
+    try:
+        parsed = urlparse(redis_url.strip())
+        host = parsed.hostname
+        if not host:
+            return False
+        port = parsed.port if parsed.port is not None else 6379
+        with socket.create_connection((host, port), timeout=timeout_sec):
+            pass
+        return True
+    except OSError:
+        return False
+
 
 @app.route('/api/v1/health', methods=['GET'])
 def api_health_check():
     """Проверка здоровья приложения"""
+    services = {
+        'perplexity_ai': OPENAI_AVAILABLE and PERPLEXITY_CONFIG['enabled'],
+        'web_scraping': True,
+        'caching': True,
+    }
+    # Если REDIS_URL не задан — ключ redis в services не добавляем (опциональная проверка для ops).
+    redis_url = (os.getenv('REDIS_URL') or '').strip()
+    if redis_url:
+        services['redis'] = _redis_tcp_reachable(redis_url)
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
         'version': '2.3',
-        'services': {
-            'perplexity_ai': OPENAI_AVAILABLE and PERPLEXITY_CONFIG['enabled'],
-            'web_scraping': True,
-            'caching': True
-        }
+        'services': services,
     })
 
 @app.route('/api/v1/config', methods=['GET'])
@@ -553,12 +652,27 @@ def api_get_config():
 # ERROR HANDLERS
 # ================================
 
+def _wants_unified_api_error() -> bool:
+    """JSON-формат ошибок для /api/* или когда Accept явно предпочитает application/json."""
+    if request.path.startswith("/api/"):
+        return True
+    am = request.accept_mimetypes
+    return am["application/json"] > am["text/html"]
+
+
 @app.errorhandler(404)
 def not_found(error):
-    return jsonify({'error': 'Endpoint not found'}), 404
+    if _wants_unified_api_error():
+        return api_error("not_found", "Endpoint not found", 404)
+    if isinstance(error, HTTPException):
+        return error.get_response()
+    return NotFound().get_response()
+
 
 @app.errorhandler(500)
 def internal_error(error):
+    if _wants_unified_api_error():
+        return api_error("internal_error", "Internal server error", 500)
     return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
@@ -567,8 +681,8 @@ if __name__ == '__main__':
         os.makedirs('templates')
 
     # Получаем настройки из переменных окружения
-    debug_mode = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
-    host = os.getenv('FLASK_HOST', '0.0.0.0')
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    host = os.getenv('FLASK_HOST', '0.0.0.0')  # nosec B104
     port = int(os.getenv('FLASK_PORT', 5000))
 
     logger.info("🚀 Запуск улучшенного веб-приложения для поиска бизнес-поставщиков")

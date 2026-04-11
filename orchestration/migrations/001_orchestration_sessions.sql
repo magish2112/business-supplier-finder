@@ -1,0 +1,4 @@
+-- Устарело: DDL сессий и основная схема БД — в app_db/schema.sql
+-- (таблица orchestration_sessions + suppliers). Для старых файлов БД без таблицы
+-- сессий оркестратор по-прежнему вызывает _ensure_sessions_table() при старте.
+-- Локальный каталог поставщиков — таблица suppliers и SupplierRepository, не local_suppliers.

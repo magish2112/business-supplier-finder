@@ -1,0 +1,24 @@
+# Веб и конфиг
+Flask>=2.3,<4
+python-dotenv>=1.0.0
+Werkzeug>=3.0
+
+# Поиск и парсинг (business_supplier_finder)
+requests>=2.28.0
+beautifulsoup4>=4.12.0
+selenium>=4.15.0
+webdriver-manager>=4.0.0
+fake-useragent>=1.4.0
+
+# Данные
+openpyxl>=3.1.0
+
+# LLM (опционально; при отсутствии часть функций отключается)
+openai>=1.0.0
+anthropic>=0.18.0
+
+# Продакшен WSGI (рекомендуется вместо встроенного сервера Flask)
+gunicorn>=21.0.0
+
+# Тесты
+pytest>=7,<9
