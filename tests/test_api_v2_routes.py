@@ -34,7 +34,7 @@ class TestApiV2Routes(unittest.TestCase):
         body = resp.get_json()
         self.assertIsNotNone(body)
         self.assertEqual(body.get("request_id"), "req-test-1")
-        mock_start.assert_called_once_with("металлопрокат", "Москва", "опт")
+        mock_start.assert_called_once_with("металлопрокат", "Москва", "опт", message=None)
 
     @patch("routes.orchestration_routes.get_request_state")
     def test_get_request_returns_200(self, mock_get, _mock_enforce):
@@ -68,3 +68,20 @@ class TestApiV2Routes(unittest.TestCase):
         body = resp.get_json()
         self.assertIsNotNone(body)
         self.assertEqual(body.get("error", {}).get("code"), "validation_error")
+
+    @patch("routes.orchestration_routes.start_request")
+    def test_post_requests_message_only_ok(self, mock_start, _mock_enforce):
+        mock_start.return_value = {
+            "request_id": "req-msg-1",
+            "step": "AWAIT_CLARIFICATION",
+            "message": "Нужны уточнения",
+            "suppliers": [],
+            "clarification_questions": ["Город?"],
+        }
+        resp = self.client.post(
+            "/api/v2/requests",
+            data=json.dumps({"message": "Нужен опт муки 10т", "city": ""}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        mock_start.assert_called_once_with("", "", "", message="Нужен опт муки 10т")

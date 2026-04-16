@@ -3,70 +3,120 @@
 {% block title %}Поток оркестрации (API v2){% endblock %}
 
 {% block content %}
-<div class="card mb-4">
-    <div class="card-body">
-        <h2 class="card-title h4 mb-3"><i class="fas fa-project-diagram me-2"></i>Оркестрация (v2)</h2>
-        <p class="text-muted small mb-4">Запрос создаётся через <code>/api/v2/requests</code>; подтверждение списка — <code>/api/v2/requests/&lt;id&gt;/confirm-local</code>; отправка — <code>/api/v2/requests/&lt;id&gt;/send-emails</code>. Если на сервере задан <code>API_KEY</code>, при первом запросе браузер спросит ключ (хранится в sessionStorage вкладки).</p>
-        <form id="orch-form" class="row g-3">
+<div class="orch-flow-page" id="orch-flow-root" data-step="">
+    <header class="orch-flow-hero mb-4">
+        <h1 class="orch-flow-title"><i class="fas fa-diagram-project me-2" aria-hidden="true"></i>Оркестрация (API&nbsp;v2)</h1>
+        <p class="orch-flow-lead">Создание: <code>/api/v2/requests</code> (поля <code>query</code> и/или <code>message</code>); уточнения — <code>/clarify</code>; выбор получателей — <code>/recipients</code>; локальное подтверждение — <code>/confirm-local</code>; отправка — <code>/send-emails</code>. При заданном <code>API_KEY</code> ключ запрашивается один раз (sessionStorage).</p>
+    </header>
+
+    <section class="orch-flow-card orch-flow-card--intro mb-4" aria-labelledby="orch-form-heading">
+        <h2 id="orch-form-heading" class="orch-flow-section-title">Новая заявка</h2>
+        <form id="orch-form" class="row g-3 orch-flow-form">
             <div class="col-md-12">
-                <label for="orch-query" class="form-label">Запрос (query)</label>
-                <input type="text" class="form-control" id="orch-query" name="query" required placeholder="Например: сантехника оптом">
+                <label for="orch-query" class="form-label orch-flow-label">Запрос (query)</label>
+                <input type="text" class="form-control orch-flow-input" id="orch-query" name="query" placeholder="Например: сантехника оптом" autocomplete="off">
+            </div>
+            <div class="col-md-12">
+                <label for="orch-message" class="form-label orch-flow-label">Сообщение (message)</label>
+                <textarea class="form-control orch-flow-input" id="orch-message" name="message" rows="3" placeholder="Свободная формулировка — поля извлечёт модель (LLM)"></textarea>
             </div>
             <div class="col-md-6">
-                <label for="orch-city" class="form-label">Город</label>
-                <input type="text" class="form-control" id="orch-city" name="city" placeholder="Ставрополь">
+                <label for="orch-city" class="form-label orch-flow-label">Город</label>
+                <input type="text" class="form-control orch-flow-input" id="orch-city" name="city" placeholder="Ставрополь" autocomplete="address-level2">
             </div>
             <div class="col-md-6">
-                <label for="orch-direction" class="form-label">Направление деятельности</label>
-                <input type="text" class="form-control" id="orch-direction" name="activity_direction" placeholder="Оптовые поставки">
+                <label for="orch-direction" class="form-label orch-flow-label">Направление деятельности</label>
+                <input type="text" class="form-control orch-flow-input" id="orch-direction" name="activity_direction" placeholder="Оптовые поставки">
             </div>
             <div class="col-12">
-                <button type="submit" class="btn btn-primary" id="orch-submit">
-                    <i class="fas fa-play me-2"></i>Запустить
+                <button type="submit" class="btn btn-primary orch-flow-btn-primary" id="orch-submit">
+                    <i class="fas fa-play me-2" aria-hidden="true"></i>Запустить
                 </button>
             </div>
         </form>
-        <div id="orch-alert" class="alert mt-3 d-none" role="alert"></div>
-    </div>
-</div>
+        <div id="orch-alert" class="orch-flow-alert mt-3 d-none" role="alert"></div>
+    </section>
 
-<div class="card d-none" id="orch-results-card">
-    <div class="card-body">
-        <h3 class="h5 mb-2">Заявка <code id="orch-req-id"></code></h3>
-        <p class="mb-2"><span class="badge bg-secondary" id="orch-step"></span> <span id="orch-message" class="text-muted"></span></p>
-        <h4 class="h6 mt-4">Поставщики</h4>
-        <ul class="list-group list-group-flush mb-4" id="orch-suppliers"></ul>
-
-        <div id="orch-email-draft-section" class="card bg-light mb-4 d-none border-0">
-            <div class="card-body">
-                <h4 class="h6 mb-3"><i class="fas fa-envelope-open-text me-2"></i>Черновик рассылки</h4>
-                <p class="mb-1 small text-muted">Тема</p>
-                <p class="mb-3" id="orch-email-subject"></p>
-                <p class="mb-1 small text-muted">Текст (превью)</p>
-                <pre class="small bg-white border rounded p-3 mb-3 mb-md-0" id="orch-email-body" style="white-space: pre-wrap;"></pre>
-                <p class="mb-1 small text-muted mt-3">Получатели</p>
-                <ul class="list-group list-group-flush small" id="orch-email-recipients"></ul>
+    <section class="orch-flow-card orch-flow-card--results d-none" id="orch-results-card" aria-live="polite">
+        <div class="orch-flow-results-head">
+            <div>
+                <h2 class="orch-flow-section-title orch-flow-section-title--sm mb-1">Заявка <code class="orch-flow-code" id="orch-req-id"></code></h2>
+                <p class="orch-flow-status-line mb-0">
+                    <span class="orch-flow-badge" id="orch-step"></span>
+                    <span id="orch-status-msg" class="orch-flow-status-msg"></span>
+                </p>
             </div>
         </div>
 
-        <div class="d-flex flex-wrap gap-2 mb-3" id="orch-local-confirm-group">
-            <button type="button" class="btn btn-success" id="orch-confirm-yes" disabled>
-                <i class="fas fa-paper-plane me-2"></i>Подтвердить отправку
-            </button>
-            <button type="button" class="btn btn-outline-danger" id="orch-confirm-no" disabled>
-                <i class="fas fa-times me-2"></i>Отказаться
+        <nav class="orch-flow-tracker" aria-label="Этапы потока">
+            <p class="orch-flow-tracker-intro" id="orch-tracker-intro">После создания заявки: <strong>уточнение</strong> → <strong>получатели</strong> → <strong>локальное подтверждение</strong> → <strong>отправка по SMTP</strong>.</p>
+            <ol class="orch-flow-steps" role="list">
+                <li class="orch-flow-step" data-orch-step="AWAIT_CLARIFICATION">
+                    <span class="orch-flow-step-num" aria-hidden="true">1</span>
+                    <span class="orch-flow-step-label">Уточнение</span>
+                </li>
+                <li class="orch-flow-step" data-orch-step="AWAIT_RECIPIENT_SELECTION">
+                    <span class="orch-flow-step-num" aria-hidden="true">2</span>
+                    <span class="orch-flow-step-label">Получатели</span>
+                </li>
+                <li class="orch-flow-step" data-orch-step="AWAIT_USER_LOCAL_CONFIRM">
+                    <span class="orch-flow-step-num" aria-hidden="true">3</span>
+                    <span class="orch-flow-step-label">Подтверждение</span>
+                </li>
+                <li class="orch-flow-step" data-orch-step="AWAIT_SEND_CONFIRM">
+                    <span class="orch-flow-step-num" aria-hidden="true">4</span>
+                    <span class="orch-flow-step-label">Отправка</span>
+                </li>
+            </ol>
+        </nav>
+
+        <h3 class="orch-flow-subheading mt-4 mb-3">Поставщики</h3>
+        <ul class="list-group list-group-flush orch-flow-supplier-list mb-4" id="orch-suppliers"></ul>
+
+        <div id="orch-clarify-card" class="orch-flow-nested orch-flow-nested--clarify mb-4 d-none">
+            <h3 class="orch-flow-subheading mb-2">Уточнения по заявке</h3>
+            <p class="orch-flow-hint mb-3">Ответьте на вопросы — после отправки подбор продолжится автоматически.</p>
+            <div id="orch-clarify-fields" class="vstack gap-3"></div>
+            <button type="button" class="btn btn-primary orch-flow-btn-primary mt-3" id="orch-clarify-submit">
+                <i class="fas fa-check me-2" aria-hidden="true"></i>Отправить ответы
             </button>
         </div>
-        <div class="d-flex flex-wrap gap-2" id="orch-send-emails-group">
-            <button type="button" class="btn btn-primary" id="orch-send-smtp" disabled>
-                <i class="fas fa-paper-plane me-2"></i>Выполнить отправку (SMTP)
-            </button>
-            <button type="button" class="btn btn-outline-secondary" id="orch-send-skip" disabled>
-                <i class="fas fa-ban me-2"></i>Не отправлять
+
+        <div id="orch-recipient-select-actions" class="orch-flow-actions orch-flow-actions--recipients mb-4 d-none">
+            <p class="orch-flow-hint mb-3">Отметьте поставщиков с e-mail для рассылки и нажмите кнопку.</p>
+            <button type="button" class="btn btn-primary orch-flow-btn-primary" id="orch-recipients-submit" disabled>
+                <i class="fas fa-user-check me-2" aria-hidden="true"></i>Подтвердить выбранных получателей
             </button>
         </div>
-        <p class="small text-muted mt-2 mb-0 d-none" id="orch-send-route-hint">Маршрут <code>/send-emails</code> пока недоступен (обновите бэкенд).</p>
-    </div>
+
+        <div id="orch-email-draft-section" class="orch-flow-nested orch-flow-nested--draft mb-4 d-none">
+            <h3 class="orch-flow-subheading mb-3"><i class="fas fa-envelope-open-text me-2" aria-hidden="true"></i>Черновик рассылки</h3>
+            <p class="orch-flow-meta-label mb-1">Тема</p>
+            <p class="orch-flow-draft-text mb-3" id="orch-email-subject"></p>
+            <p class="orch-flow-meta-label mb-1">Текст (превью)</p>
+            <pre class="orch-flow-pre" id="orch-email-body"></pre>
+            <p class="orch-flow-meta-label mb-1 mt-3">Получатели</p>
+            <ul class="list-group list-group-flush orch-flow-recip-list" id="orch-email-recipients"></ul>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 mb-3 orch-flow-btn-row" id="orch-local-confirm-group">
+            <button type="button" class="btn btn-success orch-flow-btn-success" id="orch-confirm-yes" disabled>
+                <i class="fas fa-paper-plane me-2" aria-hidden="true"></i>Подтвердить отправку
+            </button>
+            <button type="button" class="btn btn-outline-danger orch-flow-btn-danger-outline" id="orch-confirm-no" disabled>
+                <i class="fas fa-times me-2" aria-hidden="true"></i>Отказаться
+            </button>
+        </div>
+        <div class="d-flex flex-wrap gap-2 orch-flow-btn-row" id="orch-send-emails-group">
+            <button type="button" class="btn btn-primary orch-flow-btn-primary" id="orch-send-smtp" disabled>
+                <i class="fas fa-paper-plane me-2" aria-hidden="true"></i>Выполнить отправку (SMTP)
+            </button>
+            <button type="button" class="btn btn-outline-secondary orch-flow-btn-muted-outline" id="orch-send-skip" disabled>
+                <i class="fas fa-ban me-2" aria-hidden="true"></i>Не отправлять
+            </button>
+        </div>
+        <p class="orch-flow-route-hint mt-3 mb-0 d-none" id="orch-send-route-hint">Маршрут <code>/send-emails</code> пока недоступен (обновите бэкенд).</p>
+    </section>
 </div>
 {% endblock %}
 
@@ -76,9 +126,10 @@
     const form = document.getElementById('orch-form');
     const alertEl = document.getElementById('orch-alert');
     const resultsCard = document.getElementById('orch-results-card');
+    const flowRoot = document.getElementById('orch-flow-root');
     const reqIdEl = document.getElementById('orch-req-id');
     const stepEl = document.getElementById('orch-step');
-    const msgEl = document.getElementById('orch-message');
+    const msgEl = document.getElementById('orch-status-msg');
     const listEl = document.getElementById('orch-suppliers');
     const btnYes = document.getElementById('orch-confirm-yes');
     const btnNo = document.getElementById('orch-confirm-no');
@@ -89,7 +140,13 @@
     const btnSendSmtp = document.getElementById('orch-send-smtp');
     const btnSendSkip = document.getElementById('orch-send-skip');
     const sendRouteHint = document.getElementById('orch-send-route-hint');
+    const clarifyCard = document.getElementById('orch-clarify-card');
+    const clarifyFields = document.getElementById('orch-clarify-fields');
+    const clarifySubmit = document.getElementById('orch-clarify-submit');
+    const recipientActions = document.getElementById('orch-recipient-select-actions');
+    const recipientsSubmit = document.getElementById('orch-recipients-submit');
     let currentId = null;
+    let recipientSelectionMode = false;
     const apiFetch = (typeof window.bizsfApiFetch === 'function') ? window.bizsfApiFetch : fetch;
 
     function apiErrMsg(j) {
@@ -100,7 +157,7 @@
     }
 
     function showAlert(kind, text) {
-        alertEl.className = 'alert mt-3 alert-' + (kind === 'error' ? 'danger' : 'info');
+        alertEl.className = 'orch-flow-alert mt-3 orch-flow-alert--' + (kind === 'error' ? 'error' : 'info');
         alertEl.textContent = text;
         alertEl.classList.remove('d-none');
     }
@@ -143,7 +200,7 @@
             draftSubjectEl.textContent = '';
             draftBodyEl.textContent = '';
             const li = document.createElement('li');
-            li.className = 'list-group-item text-muted border-0 px-0';
+            li.className = 'list-group-item orch-flow-list-muted border-0 px-0';
             li.textContent = 'Черновик не передан в ответе API.';
             draftRecipientsEl.appendChild(li);
             return;
@@ -154,14 +211,14 @@
         var recips = draft.recipients || [];
         if (!recips.length) {
             var empty = document.createElement('li');
-            empty.className = 'list-group-item text-muted border-0 px-0';
+            empty.className = 'list-group-item orch-flow-list-muted border-0 px-0';
             empty.textContent = 'Нет адресов в списке получателей.';
             draftRecipientsEl.appendChild(empty);
             return;
         }
         recips.forEach(function (addr) {
             var li = document.createElement('li');
-            li.className = 'list-group-item border-0 px-0';
+            li.className = 'list-group-item orch-flow-recip-item border-0 px-0';
             li.textContent = String(addr);
             draftRecipientsEl.appendChild(li);
         });
@@ -177,7 +234,27 @@
         if (s.city) parts.push('Город: ' + escapeHtml(String(s.city)));
         if (s.phone) parts.push('Тел: ' + escapeHtml(String(s.phone)));
         if (s.note) parts.push(escapeHtml(String(s.note)));
-        return parts.length ? '<br><small class="text-muted">' + parts.join(' · ') + '</small>' : '';
+        return parts.length ? '<br><small class="orch-flow-supplier-meta">' + parts.join(' · ') + '</small>' : '';
+    }
+
+    function renderClarificationQuestions(questions) {
+        clarifyFields.innerHTML = '';
+        (questions || []).forEach(function (q, idx) {
+            const wrap = document.createElement('div');
+            const id = 'orch-clarify-' + idx;
+            wrap.innerHTML = '<label class="form-label" for="' + id + '">' + escapeHtml(String(q)) + '</label>' +
+                '<input type="text" class="form-control orch-clarify-input" id="' + id + '" data-qindex="' + idx + '">';
+            clarifyFields.appendChild(wrap);
+        });
+    }
+
+    function collectClarificationAnswers() {
+        const answers = {};
+        clarifyFields.querySelectorAll('.orch-clarify-input').forEach(function (inp) {
+            const idx = inp.getAttribute('data-qindex');
+            answers['q' + idx] = inp.value.trim();
+        });
+        return answers;
     }
 
     function renderState(data) {
@@ -185,17 +262,57 @@
         reqIdEl.textContent = data.request_id;
         stepEl.textContent = data.step || '';
         msgEl.textContent = data.message || '';
+        if (flowRoot) flowRoot.setAttribute('data-step', data.step || '');
         listEl.innerHTML = '';
-        (data.suppliers || []).forEach(function (s, i) {
-            const li = document.createElement('li');
-            li.className = 'list-group-item';
-            const name = s.name || s.title || ('Поставщик ' + (i + 1));
-            li.innerHTML = '<strong>' + escapeHtml(name) + '</strong>' + supplierExtras(s);
-            listEl.appendChild(li);
-        });
-        resultsCard.classList.remove('d-none');
+        recipientSelectionMode = false;
+        clarifyCard.classList.add('d-none');
+        recipientActions.classList.add('d-none');
+        recipientsSubmit.disabled = true;
 
         var step = data.step || '';
+        var isClarify = step === 'AWAIT_CLARIFICATION';
+        var isPickRecipients = step === 'AWAIT_RECIPIENT_SELECTION';
+
+        if (isClarify && (data.clarification_questions || []).length) {
+            clarifyCard.classList.remove('d-none');
+            renderClarificationQuestions(data.clarification_questions);
+        }
+
+        if (isPickRecipients) {
+            recipientSelectionMode = true;
+            recipientActions.classList.remove('d-none');
+        }
+
+        var supplierList = isPickRecipients && (data.recipient_candidates || []).length
+            ? data.recipient_candidates
+            : (data.suppliers || []);
+
+        supplierList.forEach(function (s, i) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item orch-flow-supplier-item';
+            const name = s.name || s.title || ('Поставщик ' + (i + 1));
+            var inner = '<strong>' + escapeHtml(name) + '</strong>' + supplierExtras(s);
+            if (isPickRecipients && s.id) {
+                var cid = 'orch-recip-' + String(s.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+                inner = '<div class="form-check">' +
+                    '<input class="form-check-input orch-recip-cb" type="checkbox" value="' + escapeHtml(String(s.id)) + '" id="' + cid + '">' +
+                    '<label class="form-check-label" for="' + cid + '">' + inner + '</label></div>';
+            }
+            li.innerHTML = inner;
+            listEl.appendChild(li);
+        });
+
+        if (isPickRecipients) {
+            listEl.querySelectorAll('.orch-recip-cb').forEach(function (cb) {
+                cb.addEventListener('change', function () {
+                    var any = listEl.querySelectorAll('.orch-recip-cb:checked').length > 0;
+                    recipientsSubmit.disabled = !any;
+                });
+            });
+        }
+
+        resultsCard.classList.remove('d-none');
+
         var isLocal = step === 'AWAIT_USER_LOCAL_CONFIRM';
         var isSendConfirm = step === 'AWAIT_SEND_CONFIRM';
 
@@ -219,11 +336,18 @@
     form.addEventListener('submit', function (e) {
         e.preventDefault();
         hideAlert();
+        const q = document.getElementById('orch-query').value.trim();
+        const msg = document.getElementById('orch-message').value.trim();
+        if (!q && !msg) {
+            showAlert('error', 'Укажите запрос (query) и/или сообщение (message).');
+            return;
+        }
         const body = {
-            query: document.getElementById('orch-query').value.trim(),
+            query: q,
             city: document.getElementById('orch-city').value.trim(),
             activity_direction: document.getElementById('orch-direction').value.trim()
         };
+        if (msg) body.message = msg;
         apiFetch('/api/v2/requests', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -298,10 +422,52 @@
         }
     }
 
+    function postClarify() {
+        if (!currentId) return;
+        hideAlert();
+        apiFetch('/api/v2/requests/' + encodeURIComponent(currentId) + '/clarify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ answers: collectClarificationAnswers() })
+        })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+            .then(function (ref) {
+                if (!ref.ok) throw new Error(apiErrMsg(ref.j) || ('HTTP ' + ref.status));
+                renderState(ref.j);
+                if (typeof showToast === 'function') showToast('Ответы учтены', 'success');
+            })
+            .catch(function (err) { showAlert('error', err.message || String(err)); });
+    }
+
+    function postRecipientSelection() {
+        if (!currentId || !recipientSelectionMode) return;
+        hideAlert();
+        var ids = [];
+        listEl.querySelectorAll('.orch-recip-cb:checked').forEach(function (cb) { ids.push(cb.value); });
+        if (!ids.length) {
+            showAlert('error', 'Выберите хотя бы одного получателя.');
+            return;
+        }
+        apiFetch('/api/v2/requests/' + encodeURIComponent(currentId) + '/recipients', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ supplier_ids: ids })
+        })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+            .then(function (ref) {
+                if (!ref.ok) throw new Error(apiErrMsg(ref.j) || ('HTTP ' + ref.status));
+                renderState(ref.j);
+                if (typeof showToast === 'function') showToast('Получатели выбраны', 'success');
+            })
+            .catch(function (err) { showAlert('error', err.message || String(err)); });
+    }
+
     btnYes.addEventListener('click', function () { postConfirm(true); });
     btnNo.addEventListener('click', function () { postConfirm(false); });
     btnSendSmtp.addEventListener('click', function () { postSendEmails(true); });
     btnSendSkip.addEventListener('click', function () { postSendEmails(false); });
+    clarifySubmit.addEventListener('click', function () { postClarify(); });
+    recipientsSubmit.addEventListener('click', function () { postRecipientSelection(); });
 })();
 </script>
 {% endblock %}

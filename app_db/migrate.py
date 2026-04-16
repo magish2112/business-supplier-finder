@@ -65,6 +65,18 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
     )
 
 
+def ensure_p0_user_request_columns(conn: sqlite3.Connection) -> None:
+    """
+    Добавляет колонки P0 в user_requests, если их ещё нет (старые БД до обновления schema.sql).
+    """
+    cur = conn.execute("PRAGMA table_info(user_requests)")
+    cols = {str(row[1]) for row in cur.fetchall()}
+    if "clarification_json" not in cols:
+        conn.execute("ALTER TABLE user_requests ADD COLUMN clarification_json TEXT")
+    if "selected_supplier_ids" not in cols:
+        conn.execute("ALTER TABLE user_requests ADD COLUMN selected_supplier_ids TEXT")
+
+
 def run_migrations(db_path: str | None = None) -> list[int]:
     """
     Накатывает ``app_db/migrations/*.sql`` по возрастанию имени файла.
@@ -78,6 +90,7 @@ def run_migrations(db_path: str | None = None) -> list[int]:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
         _ensure_table(conn)
+        ensure_p0_user_request_columns(conn)
         conn.commit()
         done = {row[0] for row in conn.execute("SELECT version FROM _schema_migrations")}
         files = sorted(_migrations_dir().glob("*.sql"))

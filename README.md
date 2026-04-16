@@ -130,6 +130,18 @@ python web_app.py
 
 Перейдите по адресу: http://localhost:5000
 
+### 5. React UI (оркестрация, Vite + TypeScript + Tailwind v4)
+
+Соберите фронтенд и откройте страницу **`/flow-react`** (классический поток без React остаётся на **`/flow`**).
+
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+Для разработки с прокси API: `npm run dev` (Vite на порту 5173, бэкенд Flask на 5000). Подробнее — `frontend/README.md`.
+
 ## 🐛 Устранение неполадок
 
 ### Проблемы с установкой зависимостей

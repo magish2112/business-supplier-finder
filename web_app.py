@@ -21,6 +21,7 @@ import time
 import uuid
 
 from routes.orchestration_routes import orchestration_bp
+from routes.availability_routes import availability_bp
 from routes.api_security import enforce_api_key, validate_startup_security
 from routes.api_errors import api_error
 from app_db.search_jobs import SearchJobRepository, ensure_search_jobs_table
@@ -47,6 +48,7 @@ app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'default_secret_key_change_in_production')
 
 app.register_blueprint(orchestration_bp)
+app.register_blueprint(availability_bp)
 
 
 @app.before_request

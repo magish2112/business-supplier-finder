@@ -1,5 +1,6 @@
 """Интеграция оркестратора с SQLite: локальный матч и запись user_requests."""
 
+import json
 import os
 import sqlite3
 import tempfile
@@ -35,7 +36,23 @@ def temp_db_path():
         _unlink_sqlite_paths(path)
 
 
-def test_start_request_persists_user_request_when_local_supplier_matches(temp_db_path):
+def test_start_request_persists_user_request_when_local_supplier_matches(temp_db_path, monkeypatch):
+    def fake_complete_json(system, user, max_tokens):
+        return json.dumps(
+            {
+                "product_query": "пекарня",
+                "city": "Новосибирск",
+                "region": "",
+                "activity_direction": "пекар",
+                "quantity": "",
+                "delivery_address": "",
+                "needs_clarification": False,
+                "clarification_questions": [],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr("orchestration.service.complete_json", fake_complete_json)
     init_db(temp_db_path)
     with SupplierRepository(db_path=temp_db_path) as repo:
         repo.create(

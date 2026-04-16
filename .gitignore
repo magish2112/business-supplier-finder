@@ -77,3 +77,13 @@ Thumbs.db
 # SQLite и кэш тестов
 *.db
 .pytest_cache/
+
+# Node / Vite (React UI)
+node_modules/
+static/orch-app/
+
+# Исключения для JSON во frontend (корневой *.json скрывает data-файлы)
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json
+!frontend/tsconfig.node.json

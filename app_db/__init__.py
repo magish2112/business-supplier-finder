@@ -8,6 +8,7 @@ import sqlite3
 from pathlib import Path
 
 from app_db.connection import DEFAULT_DB_PATH, get_connection
+from app_db.migrate import run_migrations
 
 __all__ = [
     "DEFAULT_DB_PATH",
@@ -67,3 +68,4 @@ def init_db(db_path: str | None = None) -> None:
         ensure_suppliers_fts(conn)
     finally:
         conn.close()
+    run_migrations(str(path))

@@ -7,6 +7,8 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 
+from integrations.russia_validators import validate_email_basic
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +27,10 @@ def send_email(to: str, subject: str, body: str, dry_run: bool = True) -> bool:
     Не отправляет, если dry_run=True, EMAIL_DRY_RUN=true (по умолчанию),
     или не заданы SMTP_HOST / SMTP_USER / SMTP_PASSWORD / SMTP_FROM.
     """
+    if not validate_email_basic(to):
+        logger.warning("Некорректный email получателя, письмо пропущено: to=%r", to)
+        return False
+
     env_dry = os.getenv("EMAIL_DRY_RUN", "true").lower() in ("true", "1", "yes")
 
     if dry_run:

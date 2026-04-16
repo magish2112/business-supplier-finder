@@ -11,6 +11,8 @@ from orchestration.service import (
     get_request_state,
     send_confirmed_emails,
     start_request,
+    submit_clarification_answers,
+    submit_recipient_selection_state,
 )
 
 orchestration_bp = Blueprint(
@@ -23,6 +25,12 @@ orchestration_bp = Blueprint(
 @orchestration_bp.route("/flow")
 def flow_page():
     return render_template("orchestration.html")
+
+
+@orchestration_bp.route("/flow-react")
+def flow_react_page():
+    """SPA (Vite + React + Tailwind v4): собрать `cd frontend && npm run build`."""
+    return render_template("orch_react.html")
 
 
 @orchestration_bp.route("/api/v2/llm-config", methods=["GET"])
@@ -54,9 +62,19 @@ def api_v2_create_request():
     query = data.get("query", "")
     city = data.get("city", "")
     activity_direction = data.get("activity_direction", "")
-    if not str(query).strip():
-        return api_error("validation_error", "Поле query обязательно", 400)
-    payload = start_request(query, city, activity_direction)
+    message = data.get("message")
+    if isinstance(message, str):
+        message = message.strip() or None
+    else:
+        message = None
+    q = str(query).strip() if query is not None else ""
+    if not q and not message:
+        return api_error(
+            "validation_error",
+            "Укажите поле query и/или message",
+            400,
+        )
+    payload = start_request(q, city, activity_direction, message=message)
     return jsonify(payload), 201
 
 
@@ -65,6 +83,39 @@ def api_v2_get_request(request_id: str):
     state = get_request_state(request_id)
     if state is None:
         return api_error("not_found", "Заявка не найдена", 404)
+    return jsonify(state)
+
+
+@orchestration_bp.route("/api/v2/requests/<request_id>/clarify", methods=["POST"])
+def api_v2_clarify(request_id: str):
+    data = request.get_json(silent=True) or {}
+    if "answers" not in data:
+        return api_error("validation_error", "Требуется поле answers (объект или массив)", 400)
+    state = submit_clarification_answers(request_id, data.get("answers"))
+    if state is None:
+        return api_error("not_found", "Заявка не найдена", 404)
+    if state.get("_error"):
+        return api_error("invalid_state", state.get("message", "Недопустимое состояние"), 400)
+    return jsonify(state)
+
+
+@orchestration_bp.route("/api/v2/requests/<request_id>/recipients", methods=["POST", "PATCH"])
+def api_v2_select_recipients(request_id: str):
+    data = request.get_json(silent=True) or {}
+    ids = data.get("supplier_ids")
+    if ids is None:
+        ids = data.get("selected_supplier_ids")
+    if not isinstance(ids, list) or not ids:
+        return api_error(
+            "validation_error",
+            "Требуется непустой массив supplier_ids (или selected_supplier_ids)",
+            400,
+        )
+    state = submit_recipient_selection_state(request_id, [str(x) for x in ids])
+    if state is None:
+        return api_error("not_found", "Заявка не найдена", 404)
+    if state.get("_error"):
+        return api_error("invalid_state", state.get("message", "Недопустимое состояние"), 400)
     return jsonify(state)
 
 

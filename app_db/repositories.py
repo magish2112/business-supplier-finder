@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -220,6 +222,151 @@ class SupplierRepository:
             (q, limit),
         )
         return [_row_to_dict(r) for r in cur.fetchall()]
+
+    @staticmethod
+    def _fts_match_query(product_query: str) -> str:
+        """Собирает безопасный для FTS5 запрос из токенов (OR для ширины выдачи)."""
+        raw = (product_query or "").strip()
+        if not raw:
+            return ""
+        parts = [p for p in re.split(r"\s+", raw, flags=re.UNICODE) if len(p) >= 2][:12]
+        if not parts:
+            return ""
+        escaped: List[str] = []
+        for p in parts:
+            p2 = p.replace('"', '""')
+            escaped.append(f'"{p2}"')
+        return " OR ".join(escaped)
+
+    def _search_fts_ranked(self, match_q: str, limit: int) -> List[Dict[str, Any]]:
+        if not (match_q or "").strip():
+            return []
+        try:
+            cur = self._conn.execute(
+                """
+                SELECT s.*, bm25(suppliers_fts) AS fts_rank
+                FROM suppliers s
+                INNER JOIN suppliers_fts f ON s.rowid = f.rowid
+                WHERE suppliers_fts MATCH ?
+                ORDER BY fts_rank
+                LIMIT ?
+                """,
+                (match_q, limit),
+            )
+            out: List[Dict[str, Any]] = []
+            for r in cur.fetchall():
+                d = _row_to_dict(r)
+                d.pop("fts_rank", None)
+                out.append(d)
+            return out
+        except sqlite3.OperationalError:
+            return []
+
+    def _row_matches_procurement_filters(
+        self,
+        row: Dict[str, Any],
+        *,
+        city: str,
+        region: str,
+        activity_direction: str,
+    ) -> bool:
+        nc = _normalize_field(city)
+        nr = _normalize_field(region)
+        nd = _normalize_field(activity_direction)
+        ccol = _normalize_field(row.get("city") or "")
+        dcol = _normalize_field(row.get("activity_direction") or "")
+        if nc and nc not in ccol:
+            return False
+        if nr and nr not in ccol:
+            return False
+        if nd and nd not in dcol:
+            return False
+        return True
+
+    def search_suppliers_for_procurement(
+        self,
+        city: str = "",
+        region: str = "",
+        activity_direction: str = "",
+        product_query: str = "",
+        *,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """
+        Локальный подбор: фильтр по городу/региону/направлению + при непустом product_query — FTS (bm25),
+        объединение без дублей по id, сначала FTS-совпадения, затем остальные из find_by_city_and_direction.
+        """
+        cap = max(1, min(int(limit) if limit else 50, 500))
+        fts_q = self._fts_match_query(product_query)
+        fts_rows: List[Dict[str, Any]] = []
+        if fts_q:
+            fts_rows = self._search_fts_ranked(fts_q, cap * 2)
+            fts_rows = [
+                r
+                for r in fts_rows
+                if self._row_matches_procurement_filters(
+                    r, city=city, region=region, activity_direction=activity_direction
+                )
+            ]
+        geo = self.find_by_city_and_direction(city, activity_direction, exact=False, max_rows=10000)
+        if region and (region or "").strip():
+            nr = _normalize_field(region)
+            geo = [r for r in geo if nr in _normalize_field(r.get("city") or "")]
+        seen: set[str] = set()
+        ordered: List[Dict[str, Any]] = []
+        for r in fts_rows:
+            rid = str(r.get("id") or "")
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            ordered.append(r)
+            if len(ordered) >= cap:
+                return ordered
+        for r in geo:
+            rid = str(r.get("id") or "")
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            ordered.append(r)
+            if len(ordered) >= cap:
+                break
+        return ordered
+
+    def find_for_request(self, structured: Dict[str, Any], *, limit: int = 50) -> List[Dict[str, Any]]:
+        """Извлекает поля из structured (LLM/JSON) и вызывает search_suppliers_for_procurement."""
+        s = structured or {}
+        pq = s.get("product_query")
+        if pq is None:
+            pq = s.get("product")
+        return self.search_suppliers_for_procurement(
+            city=str(s.get("city") or ""),
+            region=str(s.get("region") or ""),
+            activity_direction=str(s.get("activity_direction") or s.get("activity") or ""),
+            product_query=str(pq or ""),
+            limit=limit,
+        )
+
+    def upsert_from_discovery(self, card: Dict[str, Any]) -> str:
+        """
+        Сохраняет или обновляет поставщика по «карточке» веб-поиска / дискавери.
+        Поддерживаются ключи website и website_url.
+        """
+        name = (card.get("name") or "").strip() or "Без названия"
+        website = card.get("website_url")
+        if website is None:
+            website = card.get("website")
+        data: Dict[str, Any] = {
+            "name": name,
+            "website_url": website,
+            "email": card.get("email"),
+            "phone": card.get("phone"),
+            "inn": _inn_or_none(card.get("inn")),
+            "city": card.get("city"),
+            "activity_direction": card.get("activity_direction"),
+            "source": card.get("source") or "web_discovery",
+            "verification_status": card.get("verification_status") or "unverified",
+        }
+        return self.insert_or_update(data)
 
     def insert_or_update(self, data: Dict[str, Any]) -> str:
         now = _utc_now_iso()

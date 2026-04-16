@@ -352,6 +352,112 @@ fetch('/api/v1/search', {
 });
 ```
 
+## Контракт API фронтенда (оркестрация, v2)
+
+Краткое описание JSON-эндпоинтов **`/api/v2/...`** для UI сценария подбора поставщиков. Префикс **`/api/v2/`** входит в список защищаемых маршрутов: при непустом **`API_KEY`** нужны заголовки **`X-API-Key`** или **`Authorization: Bearer`** (см. раздел «Аутентификация»).
+
+### Эндпоинты
+
+| Метод | Путь | Тело запроса (JSON) | Успешный код |
+|--------|------|---------------------|--------------|
+| `GET` | `/api/v2/llm-config` | — | `200` |
+| `POST` | `/api/v2/requests` | `query`, `city`, `activity_direction`, `message` (все строки; `message` может быть опущена) | `201` |
+| `GET` | `/api/v2/requests/<id>` | — | `200` |
+| `POST` | `/api/v2/requests/<id>/clarify` | `answers` — объект или массив (поле обязательно) | `200` |
+| `POST` или `PATCH` | `/api/v2/requests/<id>/recipients` | непустой массив `supplier_ids` **или** `selected_supplier_ids` | `200` |
+| `POST` | `/api/v2/requests/<id>/confirm-local` | `send` — boolean (поле обязательно) | `200` |
+| `POST` | `/api/v2/requests/<id>/send-emails` | `execute` — boolean (поле обязательно) | `200` |
+| `POST` | `/api/v2/check-site-product` | `url`, `product` — непустые строки | `200` |
+
+**Создание заявки (`POST /api/v2/requests`):** после нормализации строки должны быть заданы **`query` и/или `message`** (хотя бы одно непустое после `strip`). Иначе ответ **`400`** с `validation_error`.
+
+**Проверка сайта (`POST /api/v2/check-site-product`):** при выключенной функции (`SITE_CHECK_ENABLED=false`) тело ответа всё равно **`200`**, но в JSON будет `ok: false` и пояснение в `error` (см. ниже).
+
+### JSON состояния оркестрации (ответы по заявке)
+
+Ответы **`GET /api/v2/requests/<id>`** и успешные **`POST`**/**`PATCH`** по ветке заявки (кроме отдельного случая ниже) возвращают объект состояния. Ниже — поля, которые фронтенд использует для отрисовки шага и данных.
+
+| Поле | Тип / смысл |
+|------|----------------|
+| `request_id` | строка — идентификатор заявки |
+| `step` | строка — текущий шаг (см. перечисление `OrchestrationStep`) |
+| `message` | строка — сообщение для пользователя (`ui_message` на сервере) |
+| `suppliers` | массив карточек поставщиков; набор зависит от `step` (локальные, кандидаты из веба и т.д.) |
+| `query` | строка — исходный текст запроса пользователя |
+| `city` | строка |
+| `activity_direction` | строка |
+| `send_confirmed` | boolean или `null` — флаг подтверждения отправки (если применимо к сессии) |
+| `structured` | объект структурированного запроса (если есть в контексте): см. таблицу ниже |
+| `clarification_questions` | массив строк — задаётся на шаге **`AWAIT_CLARIFICATION`** (дублирует/дополняет вопросы из контекста) |
+| `recipient_candidates` | массив — на шаге **`AWAIT_RECIPIENT_SELECTION`** |
+| `email_draft` | объект черновика письма — на шаге **`AWAIT_SEND_CONFIRM`** |
+| `email_send_results` | массив результатов отправки — в ответе при шаге **`DONE`**, если в сессии сохранены результаты отправки |
+
+**Объект `structured`** (ключи, ожидаемые в контракте с LLM/оркестратором):
+
+| Ключ | Описание |
+|------|-----------|
+| `product_query` | что закупают |
+| `city` | город |
+| `region` | регион (может быть пустым) |
+| `activity_direction` | отрасль / направление поставщика |
+| `quantity` | объём |
+| `delivery_address` | адрес доставки |
+| `needs_clarification` | нужны ли уточнения |
+| `clarification_questions` | список вопросов от модели (до нормализации на сервере) |
+| `clarification_responses` | ответы пользователя (объект), накапливается после **`/clarify`** |
+
+Отдельные поля (`clarification_questions` на корне, `recipient_candidates`, `email_draft`, `email_send_results`) **появляются только на соответствующих шагах** — см. `get_api_state` в `orchestration/service.py`.
+
+### Шаги оркестрации (`OrchestrationStep`)
+
+Строковые значения поля `step` (файл `orchestration/state.py`):
+
+| Значение |
+|----------|
+| `INTAKE` |
+| `LOCAL_MATCH` |
+| `AWAIT_CLARIFICATION` |
+| `AWAIT_RECIPIENT_SELECTION` |
+| `AWAIT_USER_LOCAL_CONFIRM` |
+| `WEB_DISCOVERY` |
+| `PROPOSE` |
+| `AWAIT_SEND_CONFIRM` |
+| `DONE` |
+
+### Ответ `POST /api/v2/check-site-product`
+
+Типичные поля ответа:
+
+| Поле | Описание |
+|------|-----------|
+| `ok` | успех проверки |
+| `snippet` | укороченный текст страницы или `null` |
+| `error` | код/текст ошибки или `null` при успехе |
+| `mentioned`, `confidence`, `evidence` | при `ok: true` — вывод LLM об упоминании товара |
+
+### Ошибки (`routes/api_errors.py`)
+
+Единый формат:
+
+```json
+{
+  "error": {
+    "code": "строковый_код",
+    "message": "Человекочитаемое описание"
+  }
+}
+```
+
+Типовые коды для v2-оркестрации:
+
+| HTTP | `code` | Когда |
+|------|--------|--------|
+| `400` | `validation_error` | нарушены правила тела запроса (например, нет `query`/`message`, нет `answers`, пустой список получателей, нет `send` / `execute`, пустые `url`/`product` для проверки сайта) |
+| `400` | `invalid_state` | операция не допускается в текущем состоянии заявки |
+| `404` | `not_found` | заявка с данным `id` не найдена |
+| `401` | `unauthorized` | см. раздел «Аутентификация» для защищённых префиксов |
+
 ---
 
 **Версия API:** v1

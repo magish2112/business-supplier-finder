@@ -24,11 +24,23 @@ CREATE TABLE IF NOT EXISTS user_requests (
     id TEXT PRIMARY KEY,
     raw_query TEXT NOT NULL,
     structured_json TEXT,
+    clarification_json TEXT,
+    selected_supplier_ids TEXT,
     city TEXT,
     activity_direction TEXT,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS request_audit_events (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL REFERENCES user_requests (id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    payload_json TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_request_audit_request ON request_audit_events (request_id);
 
 CREATE TABLE IF NOT EXISTS outbound_email_drafts (
     id TEXT PRIMARY KEY,
